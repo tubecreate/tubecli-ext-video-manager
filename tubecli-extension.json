@@ -1,0 +1,22 @@
+{
+  "name": "video_manager",
+  "version": "1.0.0",
+  "description": "Video Manager — Quản lý & upload video đa nền tảng: YouTube, Facebook, TikTok",
+  "author": "TubeCreate",
+  "icon": "📹",
+  "entry": "extension.py",
+  "extension_class": "VideoManagerExtension",
+  "category": "extension",
+  "tags": ["youtube", "upload", "video", "social-media", "multi-platform", "manager"],
+  "dependencies": [
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "httpx"
+  ],
+  "nodes": ["youtube_upload"],
+  "skill_md": "SKILL.md",
+  "ui_static": "static",
+  "api_prefix": "/api/v1/video_manager",
+  "min_tubecli_version": "0.1.0"
+}

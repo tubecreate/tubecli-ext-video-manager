@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Manager — TubeCLI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #080b12;
+      --surface: #0e1118;
+      --surface2: #141921;
+      --surface3: #1a2030;
+      --border: #1e2736;
+      --border2: #243047;
+      --text: #e8ecf4;
+      --text2: #8899bb;
+      --text3: #4a5980;
+      --accent: #3b82f6;
+      --accent2: #2563eb;
+      --accent-glow: rgba(59,130,246,0.18);
+      --red: #ef4444;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --purple: #a855f7;
+      --radius: 10px;
+      --yt-red: #ff0000;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .header-icon { font-size: 22px; }
+    .header h1 { font-size: 16px; font-weight: 600; }
+    .header-sub { font-size: 12px; color: var(--text2); margin-left: auto; }
+
+    /* Provider tabs */
+    .provider-tabs {
+      display: flex; gap: 4px; margin-left: 20px;
+    }
+    .provider-tab {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 12px; border-radius: 6px; cursor: pointer;
+      font-size: 12px; font-weight: 500;
+      background: transparent; color: var(--text2);
+      border: 1px solid transparent; transition: all .2s;
+    }
+    .provider-tab.active {
+      background: var(--accent-glow);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .provider-tab:hover:not(.active) { background: var(--surface3); color: var(--text); }
+    .provider-tab.soon { opacity: .4; cursor: not-allowed; }
+
+    /* ── Main layout ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      overflow: hidden;
+      flex: 1;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-section { padding: 14px 14px 8px; }
+    .sidebar-label {
+      font-size: 10px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--text3); margin-bottom: 8px;
+    }
+
+    /* Account selector */
+    .account-select {
+      width: 100%;
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--text); border-radius: 7px; padding: 8px 10px;
+      font-size: 12px; outline: none; cursor: pointer; font-family: inherit;
+      transition: border-color .2s;
+    }
+    .account-select:focus { border-color: var(--accent); }
+    .account-select option { background: var(--surface2); }
+
+    .refresh-btn {
+      width: 100%; margin-top: 6px;
+      background: var(--surface3); border: 1px solid var(--border2);
+      color: var(--text2); border-radius: 7px; padding: 6px; cursor: pointer;
+      font-size: 11px; font-family: inherit; transition: all .2s;
+      display: flex; align-items: center; justify-content: center; gap: 5px;
+    }
+    .refresh-btn:hover { background: var(--border2); color: var(--text); }
+
+    /* Channel list */
+    .channel-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+    .channel-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 8px; border-radius: 8px; cursor: pointer;
+      transition: all .2s; margin-bottom: 2px; border: 1px solid transparent;
+    }
+    .channel-item:hover { background: var(--surface3); }
+    .channel-item.active { background: var(--accent-glow); border-color: var(--accent); }
+    .channel-thumb {
+      width: 36px; height: 36px; border-radius: 50%;
+      object-fit: cover; flex-shrink: 0;
+      background: var(--surface3);
+    }
+    .channel-info h3 { font-size: 12px; font-weight: 600; line-height: 1.3; }
+    .channel-info p { font-size: 10px; color: var(--text2); margin-top: 1px; }
+
+    /* Upload queue mini */
+    .queue-mini {
+      border-top: 1px solid var(--border);
+      padding: 12px 14px;
+    }
+    .queue-item-mini {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 0; font-size: 11px;
+    }
+    .queue-item-mini .q-title { flex: 1; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .q-pct { font-size: 10px; color: var(--accent); font-weight: 600; flex-shrink: 0; }
+    .q-progress {
+      height: 3px; background: var(--surface3); border-radius: 2px;
+      overflow: hidden; margin-top: 2px;
+    }
+    .q-progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .5s; }
+
+    /* ── Main area ── */
+    .main { display: flex; flex-direction: column; overflow: hidden; }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .toolbar-title { font-size: 14px; font-weight: 600; flex: 1; }
+    .toolbar-title span { color: var(--text2); font-weight: 400; font-size: 12px; margin-left: 6px; }
+
+    .btn {
+      display: flex; align-items: center; gap: 6px;
+      padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer;
+      font-size: 12px; font-weight: 500; font-family: inherit;
+      transition: all .2s; white-space: nowrap;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
+    .btn-secondary { background: var(--surface3); color: var(--text2); border: 1px solid var(--border2); }
+    .btn-secondary:hover { color: var(--text); background: var(--border2); }
+    .btn-danger { background: rgba(239,68,68,.12); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
+    .btn-danger:hover { background: rgba(239,68,68,.2); }
+
+    .search-input {
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--text); border-radius: 7px; padding: 7px 12px;
+      font-size: 12px; outline: none; font-family: inherit; width: 220px;
+      transition: border-color .2s;
+    }
+    .search-input:focus { border-color: var(--accent); }
+    .search-input::placeholder { color: var(--text3); }
+
+    /* Video grid */
+    .video-grid {
+      flex: 1; overflow-y: auto;
+      padding: 14px; display: none;
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+      gap: 12px; align-content: start;
+    }
+    .video-grid.active { display: grid; }
+
+    .video-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden; cursor: pointer;
+      transition: all .2s;
+      position: relative;
+    }
+    .video-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(59,130,246,.12);
+    }
+    .video-card.selected { border-color: var(--accent); background: var(--accent-glow); }
+
+    .video-thumb {
+      width: 100%; aspect-ratio: 16/9; object-fit: cover;
+      background: var(--surface3); display: block;
+      position: relative;
+    }
+    .video-thumb-placeholder {
+      width: 100%; aspect-ratio: 16/9;
+      background: linear-gradient(135deg, var(--surface3), var(--surface2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 28px; color: var(--text3);
+    }
+    .video-duration {
+      position: absolute; bottom: 6px; right: 8px;
+      background: rgba(0,0,0,.85); color: #fff;
+      font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 3px;
+    }
+    .video-status-badge {
+      position: absolute; top: 6px; left: 6px;
+      font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+      text-transform: uppercase; letter-spacing: .04em;
+    }
+    .badge-public { background: rgba(34,197,94,.2); color: var(--green); }
+    .badge-private { background: rgba(239,68,68,.2); color: var(--red); }
+    .badge-unlisted { background: rgba(234,179,8,.2); color: var(--yellow); }
+
+    .video-body { padding: 10px; }
+    .video-title { font-size: 12px; font-weight: 600; line-height: 1.4; margin-bottom: 6px;
+      overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
+    .video-meta { display: flex; gap: 10px; font-size: 10px; color: var(--text2); flex-wrap: wrap; }
+    .video-meta span { display: flex; align-items: center; gap: 3px; }
+    .video-actions {
+      display: flex; gap: 4px; padding: 6px 10px 10px;
+    }
+    .video-action-btn {
+      flex: 1; padding: 5px; border-radius: 5px; border: none; cursor: pointer;
+      font-size: 10px; font-family: inherit; transition: all .2s; font-weight: 500;
+    }
+    .vab-edit { background: rgba(59,130,246,.12); color: var(--accent); }
+    .vab-edit:hover { background: rgba(59,130,246,.22); }
+    .vab-delete { background: rgba(239,68,68,.1); color: var(--red); }
+    .vab-delete:hover { background: rgba(239,68,68,.2); }
+    .vab-link { background: rgba(168,85,247,.1); color: var(--purple); }
+    .vab-link:hover { background: rgba(168,85,247,.2); }
+
+    /* Pagination */
+    .pagination {
+      display: flex; justify-content: center; align-items: center; gap: 12px;
+      padding: 12px; border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .page-btn {
+      padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border2);
+      background: var(--surface2); color: var(--text2); cursor: pointer;
+      font-size: 11px; font-family: inherit; transition: all .2s;
+    }
+    .page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .page-btn:disabled { opacity: .35; cursor: not-allowed; }
+    .page-info { font-size: 11px; color: var(--text2); }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 12px;
+      color: var(--text2); text-align: center; padding: 40px;
+    }
+    .empty-icon { font-size: 48px; opacity: .4; }
+    .empty-title { font-size: 16px; font-weight: 600; color: var(--text); }
+    .empty-sub { font-size: 13px; max-width: 320px; line-height: 1.6; }
+
+    /* ── Upload Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      display: none; align-items: center; justify-content: center;
+      z-index: 1000; backdrop-filter: blur(4px);
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 14px; width: 90%; max-width: 620px; max-height: 90vh;
+      overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,.5);
+      animation: modal-in .2s ease;
+    }
+    @keyframes modal-in { from { opacity:0; transform:scale(.95) } to { opacity:1; transform:scale(1) } }
+
+    .modal-header {
+      display: flex; align-items: center; padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .modal-header h2 { font-size: 15px; font-weight: 600; flex: 1; }
+    .modal-close {
+      background: none; border: none; color: var(--text2); cursor: pointer;
+      font-size: 18px; padding: 4px; border-radius: 4px; transition: color .2s;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* Form fields */
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-group label { font-size: 11px; font-weight: 500; color: var(--text2); }
+    .form-input, .form-select, .form-textarea {
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--text); border-radius: 7px; padding: 8px 10px;
+      font-size: 12px; outline: none; font-family: inherit;
+      transition: border-color .2s;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+    .form-select option { background: var(--surface2); }
+    .form-textarea { resize: vertical; min-height: 80px; }
+    .form-hint { font-size: 10px; color: var(--text3); }
+
+    /* File picker area */
+    .file-picker {
+      background: var(--surface2); border: 2px dashed var(--border2);
+      border-radius: 8px; padding: 20px; text-align: center;
+      cursor: pointer; transition: all .2s;
+    }
+    .file-picker:hover { border-color: var(--accent); background: var(--accent-glow); }
+    .file-picker.has-file { border-color: var(--green); border-style: solid; }
+    .file-picker-icon { font-size: 28px; margin-bottom: 8px; }
+    .file-picker-text { font-size: 12px; color: var(--text2); }
+    .file-picker-path { font-size: 11px; color: var(--green); margin-top: 4px; font-family: monospace; }
+
+    /* Thumbnail picker */
+    .thumb-picker {
+      display: flex; gap: 10px; align-items: flex-start;
+    }
+    .thumb-preview {
+      width: 120px; height: 68px; border-radius: 6px; object-fit: cover;
+      background: var(--surface3); border: 1px solid var(--border2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; color: var(--text3); flex-shrink: 0;
+      overflow: hidden;
+    }
+    .thumb-preview img { width: 100%; height: 100%; object-fit: cover; }
+    .thumb-picker .form-group { flex: 1; }
+
+    /* Upload progress bar */
+    .upload-progress-bar {
+      height: 6px; background: var(--surface3); border-radius: 3px; overflow: hidden;
+      margin-top: 6px; display: none;
+    }
+    .upload-progress-bar.visible { display: block; }
+    .upload-progress-fill {
+      height: 100%; border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent), var(--purple));
+      transition: width .4s ease; animation: shimmer 2s infinite;
+    }
+    @keyframes shimmer {
+      0% { filter: brightness(1); }
+      50% { filter: brightness(1.3); }
+      100% { filter: brightness(1); }
+    }
+    .upload-status-text { font-size: 11px; color: var(--text2); margin-top: 4px; text-align: center; }
+
+    /* Edit modal (reuse) */
+    /* ── Toast ── */
+    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
+    .toast {
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--text); border-radius: 8px; padding: 10px 14px;
+      font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
+      animation: toast-in .2s ease; display: flex; align-items: center; gap: 8px;
+      max-width: 320px;
+    }
+    .toast.success { border-color: rgba(34,197,94,.4); }
+    .toast.error { border-color: rgba(239,68,68,.4); }
+    @keyframes toast-in { from { opacity:0; transform:translateX(20px) } to { opacity:1; transform:translateX(0) } }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+    /* Loading spinner */
+    .spinner {
+      width: 18px; height: 18px; border: 2px solid var(--border2);
+      border-top-color: var(--accent); border-radius: 50%;
+      animation: spin .7s linear infinite; flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Confirm dialog */
+    .confirm-dialog {
+      position: fixed; inset: 0; background: rgba(0,0,0,.7);
+      display: none; align-items: center; justify-content: center;
+      z-index: 2000;
+    }
+    .confirm-dialog.open { display: flex; }
+    .confirm-box {
+      background: var(--surface); border: 1px solid var(--border2);
+      border-radius: 12px; padding: 24px; max-width: 380px; width: 90%;
+      text-align: center; box-shadow: 0 16px 48px rgba(0,0,0,.5);
+    }
+    .confirm-icon { font-size: 36px; margin-bottom: 12px; }
+    .confirm-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
+    .confirm-sub { font-size: 12px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+    .confirm-btns { display: flex; gap: 8px; justify-content: center; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="header">
+  <span class="header-icon">📹</span>
+  <h1>Video Manager</h1>
+  <div class="provider-tabs">
+    <div class="provider-tab active" data-provider="youtube" onclick="switchProvider('youtube')">📺 YouTube</div>
+    <div class="provider-tab soon" title="Coming soon — Phase 2">📘 Facebook</div>
+    <div class="provider-tab soon" title="Coming soon — Phase 3">🎵 TikTok</div>
+  </div>
+  <span class="header-sub" id="header-sub">Multi-platform video management</span>
+</div>
+
+<!-- ── Layout ── -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Tài khoản</div>
+      <select class="account-select" id="accountSelect" onchange="onAccountChange()">
+        <option value="">⏳ Đang tải tài khoản...</option>
+      </select>
+      <button class="refresh-btn" onclick="loadAccounts()">
+        <span id="refreshIcon">🔄</span> Làm mới
+      </button>
+    </div>
+
+    <div class="sidebar-section" style="padding-top:8px;">
+      <div class="sidebar-label">Kênh</div>
+    </div>
+    <div class="channel-list" id="channelList">
+      <div class="empty-state" style="padding:20px;">
+        <div class="empty-icon">📺</div>
+        <div style="font-size:11px;color:var(--text2);text-align:center">Chọn tài khoản để xem kênh</div>
+      </div>
+    </div>
+
+    <!-- Upload queue mini -->
+    <div class="queue-mini" id="uploadQueueMini" style="display:none;">
+      <div class="sidebar-label" style="margin-bottom:6px;">Upload Queue</div>
+      <div id="queueMiniItems"></div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main" id="mainArea">
+
+    <!-- Toolbar -->
+    <div class="toolbar" id="toolbar">
+      <div class="toolbar-title" id="toolbarTitle">
+        Chọn kênh để xem video
+        <span id="toolbarCount"></span>
+      </div>
+      <input class="search-input" type="text" id="searchInput" placeholder="🔍 Tìm video..." oninput="filterVideos()" style="display:none">
+      <button class="btn btn-secondary" onclick="loadVideos()" id="btnRefreshVideos" style="display:none">🔄 Làm mới</button>
+      <button class="btn btn-primary" onclick="openUploadModal()" id="btnUpload" style="display:none">
+        ⬆️ Upload Video
+      </button>
+    </div>
+
+    <!-- Empty state (select channel) -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">📹</div>
+      <div class="empty-title">Chọn kênh từ sidebar</div>
+      <div class="empty-sub">Kết nối tài khoản YouTube qua Auth Manager, chọn tài khoản ở trên và chọn kênh để quản lý video.</div>
+      <button class="btn btn-secondary" style="margin-top:8px;" onclick="window.location.href='/auth-manager'">
+        🔑 Cấp quyền YouTube
+      </button>
+    </div>
+
+    <!-- Video grid -->
+    <div class="video-grid" id="videoGrid"></div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination" style="display:none">
+      <button class="page-btn" id="btnPrev" onclick="loadPrevPage()" disabled>← Trước</button>
+      <span class="page-info" id="pageInfo">Trang 1</span>
+      <button class="page-btn" id="btnNext" onclick="loadNextPage()">Tiếp →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Upload Modal ── -->
+<div class="modal-overlay" id="uploadModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>⬆️ Upload Video mới</h2>
+      <button class="modal-close" onclick="closeUploadModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <!-- File picker (File Manager integration) -->
+      <div class="form-group">
+        <label>File Video *</label>
+        <div class="file-picker" id="filePicker" onclick="pickFile()">
+          <div class="file-picker-icon">📁</div>
+          <div class="file-picker-text">Nhấp để chọn file từ File Manager</div>
+          <div class="file-picker-path" id="filePickerPath" style="display:none"></div>
+        </div>
+        <span class="form-hint">Hỗ trợ: MP4, MOV, AVI, MKV, WEBM. Đường dẫn tuyệt đối trên server.</span>
+      </div>
+
+      <!-- Hoặc nhập thủ công -->
+      <div class="form-group">
+        <label>Hoặc nhập đường dẫn thủ công</label>
+        <input class="form-input" id="uploadFilePath" type="text" placeholder="/path/to/video.mp4" oninput="updateFilePicker()">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label>Tiêu đề *</label>
+          <input class="form-input" id="uploadTitle" type="text" placeholder="Tên video..." maxlength="100">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Mô tả</label>
+        <textarea class="form-textarea" id="uploadDescription" placeholder="Mô tả video..." rows="3"></textarea>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Quyền riêng tư</label>
+          <select class="form-select" id="uploadPrivacy">
+            <option value="private">🔒 Riêng tư (Private)</option>
+            <option value="unlisted">🔗 Không công khai (Unlisted)</option>
+            <option value="public">🌍 Công khai (Public)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Danh mục</label>
+          <select class="form-select" id="uploadCategory">
+            <option value="22">People & Blogs</option>
+            <option value="24">Entertainment</option>
+            <option value="27">Education</option>
+            <option value="28">Science & Technology</option>
+            <option value="10">Music</option>
+            <option value="20">Gaming</option>
+            <option value="17">Sports</option>
+            <option value="25">News & Politics</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Tags (cách nhau bằng dấu phẩy)</label>
+        <input class="form-input" id="uploadTags" type="text" placeholder="tag1, tag2, tag3...">
+      </div>
+
+      <!-- Thumbnail -->
+      <div class="form-group">
+        <label>Thumbnail (tùy chọn)</label>
+        <div class="thumb-picker">
+          <div class="thumb-preview" id="thumbPreview">🖼️</div>
+          <div class="form-group" style="flex:1;">
+            <input class="form-input" id="uploadThumbnail" type="text" placeholder="/path/to/thumbnail.jpg" oninput="updateThumbPreview()">
+            <span class="form-hint" style="margin-top:4px;">Đường dẫn file ảnh thumbnail (JPG/PNG, max 2MB)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div id="uploadProgressArea" style="display:none;">
+        <div class="upload-progress-bar visible">
+          <div class="upload-progress-fill" id="uploadProgressFill" style="width:0%"></div>
+        </div>
+        <div class="upload-status-text" id="uploadStatusText">Đang chuẩn bị upload...</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeUploadModal()" id="btnCancelUpload">Hủy</button>
+      <button class="btn btn-primary" onclick="startUpload()" id="btnStartUpload">
+        ⬆️ Bắt đầu Upload
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit Modal ── -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>✏️ Chỉnh sửa Video</h2>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="editVideoId">
+      <div class="form-group">
+        <label>Tiêu đề</label>
+        <input class="form-input" id="editTitle" type="text" maxlength="100">
+      </div>
+      <div class="form-group">
+        <label>Mô tả</label>
+        <textarea class="form-textarea" id="editDescription" rows="4"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Tags (cách nhau bằng dấu phẩy)</label>
+        <input class="form-input" id="editTags" type="text">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Quyền riêng tư</label>
+          <select class="form-select" id="editPrivacy">
+            <option value="private">🔒 Riêng tư</option>
+            <option value="unlisted">🔗 Không công khai</option>
+            <option value="public">🌍 Công khai</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Thumbnail path (tùy chọn)</label>
+          <input class="form-input" id="editThumbnailPath" type="text" placeholder="/path/to/thumb.jpg">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeEditModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveEdit()">💾 Lưu thay đổi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Confirm Dialog ── -->
+<div class="confirm-dialog" id="confirmDialog">
+  <div class="confirm-box">
+    <div class="confirm-icon" id="confirmIcon">⚠️</div>
+    <div class="confirm-title" id="confirmTitle">Xác nhận</div>
+    <div class="confirm-sub" id="confirmSub"></div>
+    <div class="confirm-btns">
+      <button class="btn btn-secondary" onclick="closeConfirm()">Hủy</button>
+      <button class="btn btn-danger" id="confirmOkBtn">Xác nhận</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+const API = (path) => `/api/v1/video_manager${path}`;
+let currentProvider = 'youtube';
+let currentEmail = '';
+let currentTokenId = '';  // token_id from Auth Manager
+let currentChannel = null;
+let allVideos = [];
+let pageTokenStack = [''];  // stack of page tokens, index = page number
+let currentPage = 0;
+let uploadEventSource = null;
+let queuePollingInterval = null;
+
+// ─── Provider ─────────────────────────────────────────────────────
+function switchProvider(id) {
+  currentProvider = id;
+  document.querySelectorAll('.provider-tab').forEach(t => t.classList.toggle('active', t.dataset.provider === id));
+  loadAccounts();
+}
+
+// ─── Accounts ─────────────────────────────────────────────────────
+async function loadAccounts() {
+  const sel = document.getElementById('accountSelect');
+  const refreshIcon = document.getElementById('refreshIcon');
+  refreshIcon.style.animation = 'spin .7s linear infinite';
+  sel.innerHTML = '<option value="">⏳ Đang tải...</option>';
+
+  try {
+    // Call Auth Manager tokens API directly (same as Livestream extension)
+    const res = await fetch('/api/v1/auth-manager/tokens?provider=google');
+    const data = await res.json();
+    const tokens = (data.tokens || []).filter(t => {
+      const scopes = t.scopes || [];
+      return scopes.some(s => s.includes('youtube'));
+    });
+
+    if (!tokens.length) {
+      sel.innerHTML = '<option value="">Chưa có tài khoản được cấp quyền</option>';
+      return;
+    }
+
+    // Deduplicate by email
+    const seen = new Set();
+    const accounts = [];
+    for (const t of tokens) {
+      const email = t.authorized_email || '';
+      if (email && !seen.has(email)) {
+        seen.add(email);
+        accounts.push({
+          email,
+          token_id: t.token_id,
+          credential_id: t.credential_id,
+          status: t.status || 'active',
+          scopes: t.scopes || [],
+        });
+      }
+    }
+
+    sel.innerHTML = accounts.map(a =>
+      `<option value="${a.email}" data-token="${a.token_id}" data-cred="${a.credential_id}">
+        ${a.email} ${a.status === 'active' ? '✅' : '⚠️ (cần refresh)'}
+      </option>`
+    ).join('');
+
+    if (accounts.length) {
+      currentEmail = accounts[0].email;
+      currentTokenId = accounts[0].token_id;
+      loadChannels();
+    }
+  } catch (e) {
+    sel.innerHTML = '<option value="">❌ Lỗi tải tài khoản</option>';
+    toast('error', '❌ Không thể tải tài khoản: ' + e.message);
+  }
+  refreshIcon.style.animation = '';
+}
+
+function onAccountChange() {
+  const sel = document.getElementById('accountSelect');
+  const opt = sel.options[sel.selectedIndex];
+  currentEmail = sel.value;
+  currentTokenId = opt ? (opt.dataset.token || '') : '';
+  currentChannel = null;
+  allVideos = [];
+  document.getElementById('videoGrid').classList.remove('active');
+  document.getElementById('emptyState').style.display = 'flex';
+  document.getElementById('pagination').style.display = 'none';
+  document.getElementById('searchInput').style.display = 'none';
+  document.getElementById('btnRefreshVideos').style.display = 'none';
+  document.getElementById('btnUpload').style.display = 'none';
+  document.getElementById('toolbarTitle').innerHTML = 'Chọn kênh để xem video';
+  document.getElementById('toolbarCount').textContent = '';
+  if (currentEmail) loadChannels();
+  else document.getElementById('channelList').innerHTML =
+    `<div class="empty-state" style="padding:20px;"><div class="empty-icon">📺</div>
+    <div style="font-size:11px;color:var(--text2)">Chọn tài khoản</div></div>`;
+}
+
+// ─── Channels ─────────────────────────────────────────────────────
+async function loadChannels() {
+  const list = document.getElementById('channelList');
+  list.innerHTML = '<div style="display:flex;justify-content:center;padding:20px;"><div class="spinner"></div></div>';
+
+  try {
+    const authParam = currentTokenId
+      ? `token_id=${encodeURIComponent(currentTokenId)}`
+      : `email=${encodeURIComponent(currentEmail)}`;
+    const res = await fetch(API(`/channels?provider=${currentProvider}&${authParam}`));
+    const data = await res.json();
+    const channels = data.channels || [];
+
+    if (!channels.length) {
+      list.innerHTML = `<div class="empty-state" style="padding:20px;">
+        <div class="empty-icon">📺</div>
+        <div style="font-size:11px;color:var(--text2)">Không tìm thấy kênh nào</div></div>`;
+      return;
+    }
+
+    list.innerHTML = channels.map(ch => `
+      <div class="channel-item" data-id="${ch.id}" onclick="selectChannel(${JSON.stringify(ch).replace(/"/g,'&quot;')})">
+        ${ch.thumbnail_url
+          ? `<img class="channel-thumb" src="${ch.thumbnail_url}" alt="${ch.title}">`
+          : `<div class="channel-thumb" style="display:flex;align-items:center;justify-content:center;font-size:16px;">📺</div>`}
+        <div class="channel-info">
+          <h3>${escHtml(ch.title)}</h3>
+          <p>${formatNumber(ch.subscribers)} subs • ${formatNumber(ch.video_count)} videos</p>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) {
+    list.innerHTML = `<div class="empty-state" style="padding:16px;"><div style="font-size:11px;color:var(--red)">❌ ${e.message}</div></div>`;
+  }
+}
+
+function selectChannel(ch) {
+  currentChannel = ch;
+  currentPage = 0;
+  pageTokenStack = [''];
+  document.querySelectorAll('.channel-item').forEach(el =>
+    el.classList.toggle('active', el.dataset.id === ch.id));
+  // Keep id="toolbarCount" on the span so loadVideos can update it
+  document.getElementById('toolbarTitle').innerHTML =
+    `${escHtml(ch.title)} <span id="toolbarCount">${formatNumber(ch.video_count)} videos</span>`;
+  document.getElementById('searchInput').style.display = 'block';
+  document.getElementById('btnRefreshVideos').style.display = 'flex';
+  document.getElementById('btnUpload').style.display = 'flex';
+  loadVideos();
+}
+
+async function loadVideos(pageToken = '') {
+  if (!currentChannel) return;
+  const grid = document.getElementById('videoGrid');
+  const emptyState = document.getElementById('emptyState');
+  grid.innerHTML = '<div style="grid-column:1/-1;display:flex;justify-content:center;padding:40px;"><div class="spinner"></div></div>';
+  grid.classList.add('active');
+  emptyState.style.display = 'none';
+
+  try {
+    // Pass token_id if available (preferred), fallback to email
+    const authParam = currentTokenId
+      ? `token_id=${encodeURIComponent(currentTokenId)}`
+      : `email=${encodeURIComponent(currentEmail)}`;
+    const url = API(`/videos?provider=${currentProvider}&${authParam}&channel_id=${currentChannel.id}&max_results=20${pageToken ? '&page_token=' + pageToken : ''}`);
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.detail || `HTTP ${res.status}`);
+    }
+
+    allVideos = data.videos || [];
+
+    // Update next token
+    const nextToken = data.next_page_token || '';
+    if (pageTokenStack.length <= currentPage + 1) pageTokenStack.push(nextToken);
+    else pageTokenStack[currentPage + 1] = nextToken;
+
+    renderVideos(allVideos);
+    updatePagination(data.total || allVideos.length, nextToken);
+    const countEl = document.getElementById('toolbarCount');
+    if (countEl) countEl.textContent = data.total ? `(${formatNumber(data.total)} tổng)` : '';
+  } catch(e) {
+    grid.innerHTML = `<div style="grid-column:1/-1;color:var(--red);padding:20px;text-align:center;">❌ ${e.message}</div>`;
+  }
+}
+
+function renderVideos(videos) {
+  const grid = document.getElementById('videoGrid');
+  const filter = document.getElementById('searchInput').value.toLowerCase();
+  const filtered = filter ? videos.filter(v => v.title.toLowerCase().includes(filter) || (v.description||'').toLowerCase().includes(filter)) : videos;
+
+  if (!filtered.length) {
+    grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text2);padding:40px;text-align:center;">Không tìm thấy video nào.</div>';
+    return;
+  }
+
+  grid.innerHTML = filtered.map(v => {
+    const statusBadge = { public: 'badge-public', private: 'badge-private', unlisted: 'badge-unlisted' }[v.status] || 'badge-private';
+    const statusLabel = { public: '🌍 Public', private: '🔒 Private', unlisted: '🔗 Unlisted' }[v.status] || v.status;
+    const duration = formatDuration(v.duration);
+
+    return `
+    <div class="video-card" data-id="${v.id}">
+      <div style="position:relative;">
+        ${v.thumbnail_url
+          ? `<img class="video-thumb" src="${v.thumbnail_url}" alt="${escHtml(v.title)}">`
+          : `<div class="video-thumb-placeholder">🎬</div>`}
+        ${duration ? `<div class="video-duration">${duration}</div>` : ''}
+        <div class="video-status-badge ${statusBadge}">${statusLabel}</div>
+      </div>
+      <div class="video-body">
+        <div class="video-title" title="${escHtml(v.title)}">${escHtml(v.title)}</div>
+        <div class="video-meta">
+          ${v.views ? `<span>👁️ ${formatNumber(v.views)}</span>` : ''}
+          ${v.likes ? `<span>❤️ ${formatNumber(v.likes)}</span>` : ''}
+          ${v.published_at ? `<span>📅 ${formatDate(v.published_at)}</span>` : ''}
+        </div>
+      </div>
+      <div class="video-actions">
+        <button class="video-action-btn vab-edit" onclick="openEditModal('${v.id}')">✏️ Sửa</button>
+        <button class="video-action-btn vab-link" onclick="window.open('${v.url}','_blank')">🔗 Xem</button>
+        <button class="video-action-btn vab-delete" onclick="confirmDelete('${v.id}','${escHtml(v.title)}')">🗑️</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function filterVideos() { renderVideos(allVideos); }
+
+function updatePagination(total, nextToken) {
+  const pg = document.getElementById('pagination');
+  pg.style.display = 'flex';
+  document.getElementById('btnPrev').disabled = currentPage === 0;
+  document.getElementById('btnNext').disabled = !nextToken;
+  document.getElementById('pageInfo').textContent = `Trang ${currentPage + 1}`;
+}
+
+function loadNextPage() {
+  if (pageTokenStack[currentPage + 1]) {
+    currentPage++;
+    loadVideos(pageTokenStack[currentPage]);
+  }
+}
+
+function loadPrevPage() {
+  if (currentPage > 0) {
+    currentPage--;
+    loadVideos(pageTokenStack[currentPage]);
+  }
+}
+
+// ─── Upload ────────────────────────────────────────────────────────
+function openUploadModal() {
+  document.getElementById('uploadModal').classList.add('open');
+  document.getElementById('uploadProgressArea').style.display = 'none';
+  document.getElementById('btnStartUpload').disabled = false;
+  document.getElementById('btnCancelUpload').textContent = 'Hủy';
+}
+function closeUploadModal() {
+  document.getElementById('uploadModal').classList.remove('open');
+  if (uploadEventSource) { uploadEventSource.close(); uploadEventSource = null; }
+}
+
+function pickFile() {
+  // Open File Manager in picker mode popup with cache-buster
+  const popup = window.open(`/file-manager?mode=picker&filter=video&t=${Date.now()}`, 'filePicker',
+    'width=960,height=640,left=150,top=100,resizable=yes');
+
+
+  const handler = (event) => {
+    // File Manager sends type: 'file-picker-select'
+    if (event.data?.type === 'file-picker-select' && event.data.path) {
+      const path = event.data.path;
+      document.getElementById('uploadFilePath').value = path;
+      updateFilePicker();
+      window.removeEventListener('message', handler);
+      if (popup && !popup.closed) popup.close();
+    }
+  };
+  window.addEventListener('message', handler);
+
+  // Cleanup if popup closed without selecting
+  const checkClosed = setInterval(() => {
+    if (popup && popup.closed) {
+      clearInterval(checkClosed);
+      window.removeEventListener('message', handler);
+    }
+  }, 1000);
+}
+
+function updateFilePicker() {
+  const path = document.getElementById('uploadFilePath').value.trim();
+  const picker = document.getElementById('filePicker');
+  const pathEl = document.getElementById('filePickerPath');
+
+  if (path) {
+    picker.classList.add('has-file');
+    pathEl.textContent = path;
+    pathEl.style.display = 'block';
+    // Auto-fill title from filename if empty
+    const title = document.getElementById('uploadTitle');
+    if (!title.value) {
+      const name = path.split(/[/\\]/).pop().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      title.value = name;
+    }
+  } else {
+    picker.classList.remove('has-file');
+    pathEl.style.display = 'none';
+  }
+}
+
+function updateThumbPreview() {
+  const path = document.getElementById('uploadThumbnail').value.trim();
+  const preview = document.getElementById('thumbPreview');
+  if (path) {
+    preview.innerHTML = `<img src="${path}" onerror="this.parentNode.textContent='🖼️'">`;
+  } else {
+    preview.textContent = '🖼️';
+  }
+}
+
+async function startUpload() {
+  const filePath = document.getElementById('uploadFilePath').value.trim();
+  const title = document.getElementById('uploadTitle').value.trim();
+  if (!filePath) { toast('error', '❌ Vui lòng chọn file video'); return; }
+  if (!title) { toast('error', '❌ Vui lòng nhập tiêu đề video'); return; }
+
+  const tagsRaw = document.getElementById('uploadTags').value;
+  const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+
+  const payload = {
+    provider: currentProvider,
+    email: currentEmail,
+    token_id: currentTokenId,
+    file_path: filePath,
+    title: title,
+    description: document.getElementById('uploadDescription').value,
+    tags: tags,
+    category_id: document.getElementById('uploadCategory').value,
+    privacy: document.getElementById('uploadPrivacy').value,
+    thumbnail_path: document.getElementById('uploadThumbnail').value.trim(),
+  };
+
+  document.getElementById('btnStartUpload').disabled = true;
+  document.getElementById('uploadProgressArea').style.display = 'block';
+  document.getElementById('uploadProgressFill').style.width = '2%';
+  document.getElementById('uploadStatusText').textContent = 'Đang xếp vào hàng đợi...';
+
+  try {
+    const res = await fetch(API('/upload'), { method: 'POST',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await res.json();
+    if (!data.success) { throw new Error(data.detail || 'Upload thất bại'); }
+
+    const taskId = data.task_id;
+    document.getElementById('uploadStatusText').textContent = `✅ Task ID: ${taskId.slice(0,12)}... — Đang upload...`;
+    startProgressStream(taskId);
+    startQueuePolling();
+  } catch(e) {
+    toast('error', `❌ ${e.message}`);
+    document.getElementById('btnStartUpload').disabled = false;
+  }
+}
+
+function startProgressStream(taskId) {
+  if (uploadEventSource) uploadEventSource.close();
+  uploadEventSource = new EventSource(API(`/upload/progress/${taskId}`));
+  uploadEventSource.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.event === 'close') { uploadEventSource.close(); return; }
+
+    const pct = data.progress_pct || 0;
+    document.getElementById('uploadProgressFill').style.width = `${Math.max(pct, 2)}%`;
+
+    const statusMap = { queued:'⏳ Chờ...', uploading:`📤 Đang upload ${pct}%`, processing:'⚙️ YouTube đang xử lý...',
+      done:'✅ Upload thành công!', error:`❌ ${data.error_message||'Lỗi upload'}`, cancelled:'🚫 Đã hủy' };
+    document.getElementById('uploadStatusText').textContent = statusMap[data.status] || data.status;
+
+    if (data.status === 'done') {
+      document.getElementById('btnCancelUpload').textContent = 'Đóng';
+      toast('success', `✅ Video "${data.title}" đã upload thành công!`);
+      loadVideos(pageTokenStack[currentPage]);
+    } else if (data.status === 'error') {
+      document.getElementById('btnStartUpload').disabled = false;
+      toast('error', `❌ Upload thất bại: ${data.error_message}`);
+    }
+  };
+}
+
+// ─── Edit Video ────────────────────────────────────────────────────
+function openEditModal(videoId) {
+  const video = allVideos.find(v => v.id === videoId);
+  if (!video) return;
+  document.getElementById('editVideoId').value = videoId;
+  document.getElementById('editTitle').value = video.title || '';
+  document.getElementById('editDescription').value = video.description || '';
+  document.getElementById('editTags').value = (video.tags || []).join(', ');
+  document.getElementById('editPrivacy').value = video.status || 'private';
+  document.getElementById('editModal').classList.add('open');
+}
+function closeEditModal() { document.getElementById('editModal').classList.remove('open'); }
+
+async function saveEdit() {
+  const videoId = document.getElementById('editVideoId').value;
+  const tagsRaw = document.getElementById('editTags').value;
+  const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+  const thumbnailPath = document.getElementById('editThumbnailPath').value.trim();
+
+  const body = {
+    title: document.getElementById('editTitle').value,
+    description: document.getElementById('editDescription').value,
+    tags, privacy: document.getElementById('editPrivacy').value,
+  };
+
+  try {
+    const res = await fetch(
+      API(`/videos/${videoId}?provider=${currentProvider}&email=${encodeURIComponent(currentEmail)}`),
+      { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }
+    );
+    const data = await res.json();
+    if (data.success) {
+      // Set thumbnail if provided
+      if (thumbnailPath) {
+        await fetch(API(`/videos/${videoId}/thumbnail?provider=${currentProvider}&email=${encodeURIComponent(currentEmail)}&thumbnail_path=${encodeURIComponent(thumbnailPath)}`), {method:'POST'});
+      }
+      toast('success', '✅ Video đã được cập nhật!');
+      closeEditModal();
+      loadVideos(pageTokenStack[currentPage]);
+    } else {
+      toast('error', `❌ ${data.detail || 'Cập nhật thất bại'}`);
+    }
+  } catch(e) {
+    toast('error', `❌ ${e.message}`);
+  }
+}
+
+// ─── Delete ────────────────────────────────────────────────────────
+let _pendingDeleteId = null;
+function confirmDelete(videoId, title) {
+  _pendingDeleteId = videoId;
+  document.getElementById('confirmTitle').textContent = 'Xóa video?';
+  document.getElementById('confirmSub').textContent = `Bạn có chắc muốn xóa video "${title}"? Hành động này không thể hoàn tác.`;
+  document.getElementById('confirmIcon').textContent = '🗑️';
+  document.getElementById('confirmOkBtn').onclick = executeDelete;
+  document.getElementById('confirmDialog').classList.add('open');
+}
+function closeConfirm() { document.getElementById('confirmDialog').classList.remove('open'); _pendingDeleteId = null; }
+
+async function executeDelete() {
+  if (!_pendingDeleteId) return;
+  closeConfirm();
+  try {
+    const res = await fetch(
+      API(`/videos/${_pendingDeleteId}?provider=${currentProvider}&email=${encodeURIComponent(currentEmail)}`),
+      { method: 'DELETE' }
+    );
+    const data = await res.json();
+    if (data.success) {
+      toast('success', '🗑️ Video đã được xóa');
+      loadVideos(pageTokenStack[currentPage]);
+    } else {
+      toast('error', `❌ ${data.detail || 'Xóa thất bại'}`);
+    }
+  } catch(e) { toast('error', `❌ ${e.message}`); }
+}
+
+// ─── Queue polling ─────────────────────────────────────────────────
+async function startQueuePolling() {
+  if (queuePollingInterval) return;
+  queuePollingInterval = setInterval(async () => {
+    try {
+      const res = await fetch(API('/upload/tasks?limit=10'));
+      const data = await res.json();
+      const tasks = (data.tasks || []).filter(t => ['queued','uploading','processing'].includes(t.status));
+      const queueMini = document.getElementById('uploadQueueMini');
+      const items = document.getElementById('queueMiniItems');
+
+      if (tasks.length === 0) {
+        queueMini.style.display = 'none';
+        clearInterval(queuePollingInterval);
+        queuePollingInterval = null;
+        return;
+      }
+      queueMini.style.display = 'block';
+      items.innerHTML = tasks.map(t => `
+        <div class="queue-item-mini">
+          <div class="q-title" title="${escHtml(t.title)}">${escHtml(t.title)}</div>
+          <div class="q-pct">${t.progress_pct}%</div>
+        </div>
+        <div class="q-progress">
+          <div class="q-progress-fill" style="width:${t.progress_pct}%"></div>
+        </div>
+      `).join('');
+    } catch(e) {}
+  }, 2000);
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────
+function toast(type, msg) {
+  const c = document.getElementById('toastContainer');
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.innerHTML = msg;
+  c.appendChild(el);
+  setTimeout(() => { el.style.animation = 'none'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
+function formatNumber(n) { if (!n) return '0'; return Number(n).toLocaleString('vi-VN'); }
+function formatDate(s) { try { return new Date(s).toLocaleDateString('vi-VN', {day:'2-digit',month:'2-digit',year:'numeric'}); } catch{return s;} }
+function formatDuration(sec) {
+  if (!sec) return '';
+  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
+  if (h) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+// ─── Init ──────────────────────────────────────────────────────────
+loadAccounts();
+</script>
+</body>
+</html>
