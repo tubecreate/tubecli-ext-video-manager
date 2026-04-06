@@ -135,20 +135,20 @@ class VideoManagerExtension(Extension):
                     pass
         return None
 
-    def _call_api(self, path: str, method: str = "GET", json_body: dict = None) -> dict:
-        """Call internal TubeCLI API."""
+    async def _call_api(self, path: str, method: str = "GET", json_body: dict = None) -> dict:
+        """Call internal TubeCLI API asynchronously to prevent event loop deadlocks."""
         import httpx
         url = f"{TUBECLI_BASE_URL}/api/v1/video_manager{path}"
         try:
-            with httpx.Client(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=30) as client:
                 if method == "GET":
-                    resp = client.get(url)
+                    resp = await client.get(url)
                 elif method == "POST":
-                    resp = client.post(url, json=json_body)
+                    resp = await client.post(url, json=json_body)
                 elif method == "PUT":
-                    resp = client.put(url, json=json_body)
+                    resp = await client.put(url, json=json_body)
                 elif method == "DELETE":
-                    resp = client.delete(url)
+                    resp = await client.delete(url)
                 else:
                     return {"status": "error", "message": f"Unknown method: {method}"}
                 
@@ -163,23 +163,71 @@ class VideoManagerExtension(Extension):
     async def _action_list_channels(self, action_data: dict, context: dict) -> str:
         provider = action_data.get("provider", "youtube")
         email = action_data.get("email", "")
+        print(f"[VideoManager] list_channels called: provider={provider}, email={email}")
 
-        result = self._call_api(f"/channels?provider={provider}&email={email}")
-        if not result.get("success"):
-            return f"❌ {result.get('message', 'Không lấy được danh sách kênh')}"
+        try:
+            emails_to_fetch = [email] if email else []
+            
+            # If no explicit email, fetch all connected accounts 
+            if not emails_to_fetch:
+                acct_result = await self._call_api(f"/accounts?provider={provider}")
+                print(f"[VideoManager] accounts result: {acct_result.get('success')}, count={acct_result.get('count', 0)}")
+                if acct_result.get("success") and acct_result.get("accounts"):
+                    emails_to_fetch = [a["email"] for a in acct_result["accounts"] if a.get("email")]
+                    
+            if not emails_to_fetch:
+                emails_to_fetch = [""]
 
-        channels = result.get("channels", [])
-        if not channels:
-            return f"📹 Không tìm thấy kênh nào cho tài khoản {email or '(mặc định)'}."
+            print(f"[VideoManager] Will fetch channels for {len(emails_to_fetch)} accounts")
+            
+            lines = [f"📺 Danh sách Kênh {provider.capitalize()}:\n"]
+            found_any = False
 
-        lines = [f"📺 **{len(channels)} kênh YouTube:**\n"]
-        for ch in channels[:10]:
-            lines.append(
-                f"• **{ch['title']}**\n"
-                f"  👥 {ch['subscribers']:,} subscribers | 🎬 {ch['video_count']:,} videos\n"
-                f"  🔗 {ch['url']}"
-            )
-        return "\n".join(lines)
+            for em in list(set(emails_to_fetch)):
+                try:
+                    result = await self._call_api(f"/channels?provider={provider}&email={em}")
+                    channels = result.get("channels", []) if result.get("success") else []
+                    print(f"[VideoManager] channels for {em}: {len(channels)} found")
+                    
+                    if channels:
+                        found_any = True
+                        if em:
+                            lines.append(f"📧 Tài khoản: {em}")
+                        for ch in channels[:10]:
+                            try:
+                                subs = int(ch.get('subscribers', 0) or 0)
+                            except (ValueError, TypeError):
+                                subs = 0
+                            try:
+                                vids = int(ch.get('video_count', 0) or 0)
+                            except (ValueError, TypeError):
+                                vids = 0
+                            
+                            title = str(ch.get('title', 'Unknown'))
+                            ch_id = str(ch.get('id', ''))
+                            ch_url = str(ch.get('url', ''))
+                            
+                            lines.append(
+                                f"• {title}\n"
+                                f"  {subs:,} subscribers | {vids:,} videos\n"
+                                f"  {ch_url}"
+                            )
+                        lines.append("---")
+                except Exception as ch_err:
+                    print(f"[VideoManager] Error fetching channels for {em}: {ch_err}")
+                    continue
+
+            if not found_any:
+                return "Không tìm thấy kênh nào."
+
+            final_text = "\n".join(lines).strip()
+            print(f"[VideoManager] Final response length: {len(final_text)} chars")
+            return final_text
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return f"Lỗi lấy danh sách kênh: {str(e)[:300]}"
 
     async def _action_list_videos(self, action_data: dict, context: dict) -> str:
         channel_id = action_data.get("channel_id", "")
@@ -190,7 +238,7 @@ class VideoManagerExtension(Extension):
         if not channel_id:
             return "❌ Thiếu channel_id. Trước tiên hãy xem danh sách kênh."
 
-        result = self._call_api(
+        result = await self._call_api(
             f"/videos?channel_id={channel_id}&provider={provider}&email={email}&max_results={max_results}"
         )
         if not result.get("success"):
@@ -203,9 +251,22 @@ class VideoManagerExtension(Extension):
         lines = [f"🎬 **{result.get('total', len(videos))} videos** (hiển thị {len(videos)}):\n"]
         for v in videos[:15]:
             status_icon = {"public": "🌍", "private": "🔒", "unlisted": "🔗"}.get(v.get("status", ""), "❓")
+            
+            try:
+                views = int(v.get('views', 0))
+            except (ValueError, TypeError):
+                views = 0
+                
+            try:
+                likes = int(v.get('likes', 0))
+            except (ValueError, TypeError):
+                likes = 0
+                
+            title_safe = str(v['title']).replace('*', '').replace('_', '').replace('[', '').replace(']', '')
+            
             lines.append(
-                f"{status_icon} **{v['title']}**\n"
-                f"   👁️ {v.get('views', 0):,} views • ❤️ {v.get('likes', 0):,}\n"
+                f"{status_icon} **{title_safe}**\n"
+                f"   👁️ {views:,} views • ❤️ {likes:,}\n"
                 f"   🆔 `{v['id']}`"
             )
 
@@ -232,7 +293,7 @@ class VideoManagerExtension(Extension):
             "privacy": privacy, "category_id": action_data.get("category_id", "22"),
             "thumbnail_path": action_data.get("thumbnail_path", ""),
         }
-        result = self._call_api("/upload", method="POST", json_body=payload)
+        result = await self._call_api("/upload", method="POST", json_body=payload)
         if result.get("success"):
             task_id = result.get("task_id", "")
             return (
@@ -257,7 +318,7 @@ class VideoManagerExtension(Extension):
             if field in action_data:
                 update_body[field] = action_data[field]
 
-        result = self._call_api(
+        result = await self._call_api(
             f"/videos/{video_id}?provider={provider}&email={email}",
             method="PUT",
             json_body=update_body,
@@ -274,7 +335,7 @@ class VideoManagerExtension(Extension):
         if not video_id:
             return "❌ Thiếu video_id."
 
-        result = self._call_api(
+        result = await self._call_api(
             f"/videos/{video_id}?provider={provider}&email={email}",
             method="DELETE",
         )
@@ -287,7 +348,7 @@ class VideoManagerExtension(Extension):
         if not task_id:
             return "❌ Thiếu task_id."
 
-        result = self._call_api(f"/upload/tasks/{task_id}")
+        result = await self._call_api(f"/upload/tasks/{task_id}")
         if not result.get("success"):
             return f"❌ Task `{task_id}` không tìm thấy."
 

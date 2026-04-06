@@ -15,14 +15,15 @@ Extension **Video Manager** cho phép quản lý và upload video lên các nề
 
 ### 1. Xem danh sách kênh YouTube:
 ```json
-{"action": "list_channels", "provider": "youtube", "email": "user@gmail.com"}
+{"action": "list_channels", "provider": "youtube"}
 ```
-Nếu user không nói email, bỏ trống — hệ thống tự tìm tài khoản đã được cấp quyền.
+> **Lưu ý:** Lệnh này sẽ liệt kê **TẤT CẢ** các kênh từ **TẤT CẢ** các tài khoản Email đã đăng nhập. AI hãy đọc kỹ danh sách này để biết kênh nào thuộc về Email nào!
 
 ### 2. Xem danh sách video của kênh:
 ```json
 {"action": "list_videos", "provider": "youtube", "channel_id": "UCxxxxxx", "email": "user@gmail.com", "max_results": 10}
 ```
+> Nếu người dùng muốn thao tác với một kênh cụ thể, bạn **BẮT BUỘC** phải truyền tham số `email` đi kèm theo kênh đó (nhìn vào danh sách trả về của `list_channels` để biết email quản lý kênh là gì). Đừng bỏ trống email trừ khi chỉ có 1 tài khoản duy nhất.
 
 ### 3. Upload video (QUAN TRỌNG: cần file_path từ File Manager):
 ```json
@@ -37,7 +38,8 @@ Nếu user không nói email, bỏ trống — hệ thống tự tìm tài kho�
   "tags": ["tag1", "tag2"]
 }
 ```
-`privacy` có thể là: `public`, `private`, `unlisted`
+`privacy` có thể là: `public`, `private`, `unlisted`.
+> **QUAN TRỌNG:** Phải truyền tham số `email` quản lý kênh đích để tránh upload nhầm sang kênh cũ của người dùng. Hãy hỏi người dùng muốn ưu tiên đăng lên tài khoản nào nếu chưa rõ.
 
 ### 4. Cập nhật video:
 ```json

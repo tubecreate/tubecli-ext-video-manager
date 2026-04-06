@@ -196,6 +196,7 @@
       overflow: hidden; cursor: pointer;
       transition: all .2s;
       position: relative;
+      display: flex; flex-direction: column;
     }
     .video-card:hover {
       border-color: var(--accent);
@@ -205,7 +206,7 @@
     .video-card.selected { border-color: var(--accent); background: var(--accent-glow); }
 
     .video-thumb {
-      width: 100%; aspect-ratio: 16/9; object-fit: cover;
+      width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover;
       background: var(--surface3); display: block;
       position: relative;
     }
@@ -229,13 +230,13 @@
     .badge-private { background: rgba(239,68,68,.2); color: var(--red); }
     .badge-unlisted { background: rgba(234,179,8,.2); color: var(--yellow); }
 
-    .video-body { padding: 10px; }
+    .video-body { padding: 10px; display: flex; flex-direction: column; flex-grow: 1; }
     .video-title { font-size: 12px; font-weight: 600; line-height: 1.4; margin-bottom: 6px;
-      overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; }
-    .video-meta { display: flex; gap: 10px; font-size: 10px; color: var(--text2); flex-wrap: wrap; }
+      overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; flex-shrink: 0; }
+    .video-meta { display: flex; gap: 10px; font-size: 10px; color: var(--text2); flex-wrap: wrap; margin-bottom: 6px; flex-shrink: 0; }
     .video-meta span { display: flex; align-items: center; gap: 3px; }
     .video-actions {
-      display: flex; gap: 4px; padding: 6px 10px 10px;
+      display: flex; gap: 4px; padding: 6px 10px 10px; flex-shrink: 0; margin-top: auto;
     }
     .video-action-btn {
       flex: 1; padding: 5px; border-radius: 5px; border: none; cursor: pointer;
@@ -794,7 +795,11 @@ async function loadVideos(pageToken = '') {
   if (!currentChannel) return;
   const grid = document.getElementById('videoGrid');
   const emptyState = document.getElementById('emptyState');
-  grid.innerHTML = '<div style="grid-column:1/-1;display:flex;justify-content:center;padding:40px;"><div class="spinner"></div></div>';
+  if (!pageToken) {
+    grid.innerHTML = '<div style="grid-column:1/-1;display:flex;justify-content:center;padding:40px;"><div class="spinner"></div></div>';
+  } else {
+    grid.insertAdjacentHTML('beforeend', '<div style="grid-column:1/-1;display:flex;justify-content:center;padding:20px;"><div class="spinner"></div></div>');
+  }
   grid.classList.add('active');
   emptyState.style.display = 'none';
 
@@ -811,33 +816,42 @@ async function loadVideos(pageToken = '') {
       throw new Error(data.detail || `HTTP ${res.status}`);
     }
 
-    allVideos = data.videos || [];
+    if (pageToken && pageTokenStack.includes(pageToken)) {
+      // If we are loading an old page or searching, append is true
+    }
+
+    if (pageToken) {
+      allVideos = [...allVideos, ...(data.videos || [])];
+    } else {
+      allVideos = data.videos || [];
+    }
 
     // Update next token
     const nextToken = data.next_page_token || '';
     if (pageTokenStack.length <= currentPage + 1) pageTokenStack.push(nextToken);
     else pageTokenStack[currentPage + 1] = nextToken;
 
-    renderVideos(allVideos);
+    renderVideos(data.videos || [], !!pageToken);
     updatePagination(data.total || allVideos.length, nextToken);
     const countEl = document.getElementById('toolbarCount');
     if (countEl) countEl.textContent = data.total ? `(${formatNumber(data.total)} tổng)` : '';
   } catch(e) {
-    grid.innerHTML = `<div style="grid-column:1/-1;color:var(--red);padding:20px;text-align:center;">❌ ${e.message}</div>`;
+    if (!pageToken) grid.innerHTML = `<div style="grid-column:1/-1;color:var(--red);padding:20px;text-align:center;">❌ ${e.message}</div>`;
+    else toast('error', `Lỗi tải thêm video: ${e.message}`);
   }
 }
 
-function renderVideos(videos) {
+function renderVideos(videos, append = false) {
   const grid = document.getElementById('videoGrid');
   const filter = document.getElementById('searchInput').value.toLowerCase();
   const filtered = filter ? videos.filter(v => v.title.toLowerCase().includes(filter) || (v.description||'').toLowerCase().includes(filter)) : videos;
 
-  if (!filtered.length) {
+  if (!filtered.length && !append) {
     grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text2);padding:40px;text-align:center;">Không tìm thấy video nào.</div>';
     return;
   }
 
-  grid.innerHTML = filtered.map(v => {
+  const html = filtered.map(v => {
     const statusBadge = { public: 'badge-public', private: 'badge-private', unlisted: 'badge-unlisted' }[v.status] || 'badge-private';
     const statusLabel = { public: '🌍 Public', private: '🔒 Private', unlisted: '🔗 Unlisted' }[v.status] || v.status;
     const duration = formatDuration(v.duration);
@@ -866,6 +880,15 @@ function renderVideos(videos) {
       </div>
     </div>`;
   }).join('');
+
+  if (append) {
+    // Remove the loading spinner before appending
+    const spinner = grid.querySelector('.spinner');
+    if (spinner && spinner.parentElement) spinner.parentElement.remove();
+    grid.insertAdjacentHTML('beforeend', html);
+  } else {
+    grid.innerHTML = html;
+  }
 }
 
 function filterVideos() { renderVideos(allVideos); }
