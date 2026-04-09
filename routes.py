@@ -73,6 +73,7 @@ class EnqueueUploadRequest(BaseModel):
     email: str = ""
     cred_id: str = ""
     token_id: str = ""  # Prefer token_id for exact resolution
+    channel_id: str = ""  # The target channel/page ID
     file_path: str           # Path from File Manager
     title: str
     description: str = ""
@@ -287,6 +288,7 @@ async def enqueue_upload(body: EnqueueUploadRequest):
             provider=body.provider,
             email=body.email,
             cred_id=body.token_id or body.cred_id,
+            channel_id=body.channel_id,
             file_path=body.file_path,
             title=body.title,
             description=body.description,

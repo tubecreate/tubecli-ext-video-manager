@@ -22,44 +22,140 @@ class FacebookProvider(VideoProvider):
 
     def list_channels(self, access_token: str) -> List[ChannelInfo]:
         """List Facebook Pages managed by the user."""
+        channels = []
         try:
             # First get user pages
             resp = requests.get(
                 f"{GRAPH_API}/me/accounts",
                 params={
                     "access_token": access_token,
-                    "fields": "id,name,category,fan_count,picture,link",
+                    "fields": "id,name,category,fan_count,picture,link,access_token",
                     "limit": 100,
                 },
                 timeout=15,
             )
-            if resp.status_code != 200:
-                logger.error(f"Failed to list FB pages: {resp.text[:300]}")
-                return []
+            # If token is a Page Token instead of a User Token, me/accounts often fails or returns empty
+            if resp.status_code == 200:
+                data = resp.json()
+                pages_data = data.get("data", [])
+                logger.info(f"[list_channels] /me/accounts returned {len(pages_data)} pages")
+                for page in pages_data:
+                    pic_url = ""
+                    if page.get("picture", {}).get("data", {}).get("url"):
+                        pic_url = page["picture"]["data"]["url"]
+                    
+                    has_page_token = bool(page.get("access_token", ""))
+                    logger.info(f"  Page: {page.get('name','')} (ID: {page.get('id','')}) has_token={has_page_token}")
 
-            data = resp.json()
-            channels = []
-            for page in data.get("data", []):
-                pic_url = ""
-                if page.get("picture", {}).get("data", {}).get("url"):
-                    pic_url = page["picture"]["data"]["url"]
-
-                channels.append(ChannelInfo(
-                    id=page.get("id", ""),
-                    title=page.get("name", ""),
-                    description=page.get("category", ""),
-                    thumbnail_url=pic_url,
-                    subscribers=page.get("fan_count", 0),
-                    url=page.get("link", f"https://facebook.com/{page.get('id', '')}"),
-                    provider="facebook",
-                    extra={
-                        "access_token": page.get("access_token", ""),  # Page-specific token
-                        "category": page.get("category", ""),
+                    channels.append(ChannelInfo(
+                        id=page.get("id", ""),
+                        title=page.get("name", ""),
+                        description=page.get("category", ""),
+                        thumbnail_url=pic_url,
+                        subscribers=page.get("fan_count", 0),
+                        url=page.get("link", f"https://facebook.com/{page.get('id', '')}"),
+                        provider="facebook",
+                        extra={
+                            "access_token": page.get("access_token", ""),  # Page-specific token
+                            "category": page.get("category", ""),
+                        },
+                    ))
+            else:
+                logger.warning(f"[list_channels] /me/accounts failed: {resp.status_code} {resp.text[:300]}")
+            
+            # Fallback 1: Granular Permissions (New Facebook Auth Model)
+            # If /me/accounts is empty, the user might have selected specific pages.
+            # We can extract the Page IDs from the granular_scopes of the token.
+            if not channels:
+                logger.info("[list_channels] /me/accounts empty, checking granular permissions...")
+                debug_resp = requests.get(
+                    f"{GRAPH_API}/debug_token",
+                    params={
+                        "input_token": access_token,
+                        "access_token": access_token,
                     },
-                ))
+                    timeout=15,
+                )
+                if debug_resp.status_code == 200:
+                    debug_data = debug_resp.json().get("data", {})
+                    target_ids = set()
+                    for scope_item in debug_data.get("granular_scopes", []):
+                        for tid in scope_item.get("target_ids", []):
+                            target_ids.add(tid)
+                            
+                    if target_ids:
+                        logger.info(f"[list_channels] Found {len(target_ids)} target_ids from debug_token: {target_ids}")
+                        for pid in target_ids:
+                            try:
+                                p_resp = requests.get(
+                                    f"{GRAPH_API}/{pid}",
+                                    params={
+                                        "access_token": access_token,
+                                        "fields": "id,name,category,fan_count,picture,link,access_token",
+                                    },
+                                    timeout=15,
+                                )
+                                if p_resp.status_code == 200:
+                                    page = p_resp.json()
+                                    pic_url = ""
+                                    if page.get("picture", {}).get("data", {}).get("url"):
+                                        pic_url = page["picture"]["data"]["url"]
+
+                                    channels.append(ChannelInfo(
+                                        id=page.get("id", ""),
+                                        title=page.get("name", ""),
+                                        description=page.get("category", ""),
+                                        thumbnail_url=pic_url,
+                                        subscribers=page.get("fan_count", 0),
+                                        url=page.get("link", f"https://facebook.com/{page.get('id', '')}"),
+                                        provider="facebook",
+                                        extra={
+                                            "access_token": page.get("access_token", access_token),
+                                            "category": page.get("category", ""),
+                                        },
+                                    ))
+                            except Exception as e:
+                                logger.warning(f"[list_channels] Failed to query page {pid}: {e}")
+
+            # Fallback 2 for Page Access Tokens! 
+            # If still no channels, query /me directly to fetch the Page itself (or user profile)
+            if not channels:
+                me_resp = requests.get(
+                    f"{GRAPH_API}/me",
+                    params={
+                        "access_token": access_token,
+                        "fields": "id,name,picture,link",
+                    },
+                    timeout=15,
+                )
+                print(f"DEBUG FALLBACK: {me_resp.status_code} | {me_resp.text[:300]}")
+                if me_resp.status_code == 200:
+                    page = me_resp.json()
+                    # A valid page has an id and name
+                    if page.get("id") and page.get("name"):
+                        pic_url = ""
+                        if page.get("picture", {}).get("data", {}).get("url"):
+                            pic_url = page["picture"]["data"]["url"]
+
+                        channels.append(ChannelInfo(
+                            id=page.get("id", ""),
+                            title=page.get("name", ""),
+                            description=page.get("category", ""),
+                            thumbnail_url=pic_url,
+                            subscribers=page.get("fan_count", 0),
+                            url=page.get("link", f"https://facebook.com/{page.get('id', '')}"),
+                            provider="facebook",
+                            extra={
+                                "access_token": access_token,  # use the provided page token
+                                "category": page.get("category", ""),
+                            },
+                        ))
+            
+            logger.error(f"DEBUG FINAL CHANNELS: {channels}")
             return channels
         except Exception as e:
             logger.error(f"list_channels failed: {e}")
+            import traceback; traceback.print_exc()
             return []
 
     def get_channel(self, channel_id: str, access_token: str) -> Optional[ChannelInfo]:
@@ -233,20 +329,27 @@ class FacebookProvider(VideoProvider):
         target_id = page_id or "me"
         page_token = access_token
         
-        if not page_id:
-            # Try to get first managed page + its page token
-            try:
-                pages = self.list_channels(access_token)
-                if pages:
-                    first_page = pages[0]
-                    target_id = first_page.id
-                    # Page-specific token from extra
-                    pt = first_page.extra.get("access_token", "")
-                    if pt:
-                        page_token = pt
-                        logger.info(f"Using Page Token for '{first_page.title}' ({target_id})")
-            except Exception as e:
-                logger.warning(f"Could not resolve page: {e}. Posting to 'me'.")
+        try:
+            pages = self.list_channels(access_token)
+            if not page_id and pages:
+                # Fallback to first page if none provided
+                first_page = pages[0]
+                target_id = first_page.id
+                pt = first_page.extra.get("access_token", "")
+                if pt:
+                    page_token = pt
+                    logger.info(f"Using Page Token for '{first_page.title}' ({target_id})")
+            elif page_id and pages:
+                # Find the specific page's token
+                for p in pages:
+                    if p.id == page_id:
+                        pt = p.extra.get("access_token", "")
+                        if pt:
+                            page_token = pt
+                            logger.info(f"Using Page Token for specified page '{p.title}' ({target_id})")
+                        break
+        except Exception as e:
+            logger.warning(f"Could not resolve page token for upload: {e}. Falling back to default token.")
 
         try:
             # For small files (<1GB), use simple upload
@@ -405,6 +508,3 @@ class FacebookProvider(VideoProvider):
             return {"status": "error", "message": f"Finish failed: {finish_resp.text[:300]}"}
 
 
-# Auto-register when module is imported
-from core import provider_registry
-provider_registry.register("facebook", FacebookProvider)

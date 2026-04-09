@@ -36,11 +36,12 @@ class UploadTask:
     cred_id: str
     file_path: str
     title: str
-    description: str
-    tags: list
-    category_id: str
-    privacy: str
-    thumbnail_path: str
+    description: str = ""
+    tags: list = field(default_factory=list)
+    category_id: str = "22"
+    privacy: str = "private"
+    thumbnail_path: str = ""
+    channel_id: str = ""
 
     status: UploadStatus = UploadStatus.QUEUED
     progress_pct: int = 0
@@ -102,6 +103,7 @@ class UploadQueue:
         provider: str,
         email: str,
         cred_id: str,
+        channel_id: str,
         file_path: str,
         title: str,
         description: str = "",
@@ -119,6 +121,7 @@ class UploadQueue:
             provider=provider,
             email=email,
             cred_id=cred_id,
+            channel_id=channel_id,
             file_path=file_path,
             title=title,
             description=description,
@@ -236,6 +239,7 @@ class UploadQueue:
                 category_id=task.category_id,
                 privacy=task.privacy,
                 progress_callback=progress_cb,
+                page_id=task.channel_id,
             )
 
             if result.get("status") == "success":

@@ -414,7 +414,7 @@
   <h1>Video Manager</h1>
   <div class="provider-tabs">
     <div class="provider-tab active" data-provider="youtube" onclick="switchProvider('youtube')">📺 YouTube</div>
-    <div class="provider-tab soon" title="Coming soon — Phase 2">📘 Facebook</div>
+    <div class="provider-tab" data-provider="facebook" onclick="switchProvider('facebook')">📘 Facebook</div>
     <div class="provider-tab soon" title="Coming soon — Phase 3">🎵 TikTok</div>
   </div>
   <span class="header-sub" id="header-sub">Multi-platform video management</span>
@@ -472,8 +472,8 @@
     <div class="empty-state" id="emptyState">
       <div class="empty-icon">📹</div>
       <div class="empty-title">Chọn kênh từ sidebar</div>
-      <div class="empty-sub">Kết nối tài khoản YouTube qua Auth Manager, chọn tài khoản ở trên và chọn kênh để quản lý video.</div>
-      <button class="btn btn-secondary" style="margin-top:8px;" onclick="window.location.href='/auth-manager'">
+      <div class="empty-sub" id="emptyStateSub">Kết nối tài khoản YouTube qua Auth Manager, chọn tài khoản ở trên và chọn kênh để quản lý video.</div>
+      <button class="btn btn-secondary" style="margin-top:8px;" onclick="window.location.href='/auth-manager'" id="btnAuth">
         🔑 Cấp quyền YouTube
       </button>
     </div>
@@ -660,6 +660,11 @@ let queuePollingInterval = null;
 function switchProvider(id) {
   currentProvider = id;
   document.querySelectorAll('.provider-tab').forEach(t => t.classList.toggle('active', t.dataset.provider === id));
+  
+  const providerName = id === 'youtube' ? 'YouTube' : id === 'facebook' ? 'Facebook' : 'TikTok';
+  document.getElementById('emptyStateSub').textContent = `Kết nối tài khoản ${providerName} qua Auth Manager, chọn tài khoản ở trên và chọn kênh để quản lý video.`;
+  document.getElementById('btnAuth').innerHTML = `🔑 Cấp quyền ${providerName}`;
+  
   loadAccounts();
 }
 
@@ -671,12 +676,15 @@ async function loadAccounts() {
   sel.innerHTML = '<option value="">⏳ Đang tải...</option>';
 
   try {
-    // Call Auth Manager tokens API directly (same as Livestream extension)
-    const res = await fetch('/api/v1/auth-manager/tokens?provider=google');
+    // Call Auth Manager tokens API directly
+    const authApiProvider = currentProvider === 'youtube' ? 'google' : currentProvider;
+    const res = await fetch(`/api/v1/auth-manager/tokens?provider=${authApiProvider}`);
     const data = await res.json();
     const tokens = (data.tokens || []).filter(t => {
       const scopes = t.scopes || [];
-      return scopes.some(s => s.includes('youtube'));
+      if (currentProvider === 'youtube') return scopes.some(s => s.includes('youtube'));
+      if (currentProvider === 'facebook') return true; // Facebook uses different granular scopes, allow if returned
+      return true;
     });
 
     if (!tokens.length) {
@@ -997,7 +1005,9 @@ async function startUpload() {
   const payload = {
     provider: currentProvider,
     email: currentEmail,
+    cred_id: currentTokenId,
     token_id: currentTokenId,
+    channel_id: currentChannel ? currentChannel.id : "",
     file_path: filePath,
     title: title,
     description: document.getElementById('uploadDescription').value,
@@ -1038,7 +1048,8 @@ function startProgressStream(taskId) {
     const pct = data.progress_pct || 0;
     document.getElementById('uploadProgressFill').style.width = `${Math.max(pct, 2)}%`;
 
-    const statusMap = { queued:'⏳ Chờ...', uploading:`📤 Đang upload ${pct}%`, processing:'⚙️ YouTube đang xử lý...',
+    const providerName = currentProvider === 'youtube' ? 'YouTube' : currentProvider === 'facebook' ? 'Facebook' : 'TikTok';
+    const statusMap = { queued:'⏳ Chờ...', uploading:`📤 Đang upload ${pct}%`, processing:`⚙️ ${providerName} đang xử lý...`,
       done:'✅ Upload thành công!', error:`❌ ${data.error_message||'Lỗi upload'}`, cancelled:'🚫 Đã hủy' };
     document.getElementById('uploadStatusText').textContent = statusMap[data.status] || data.status;
 
