@@ -63,29 +63,30 @@ class FacebookProvider(VideoProvider):
             else:
                 logger.warning(f"[list_channels] /me/accounts failed: {resp.status_code} {resp.text[:300]}")
             
-            # Fallback 1: Granular Permissions (New Facebook Auth Model)
-            # If /me/accounts is empty, the user might have selected specific pages.
-            # We can extract the Page IDs from the granular_scopes of the token.
-            if not channels:
-                logger.info("[list_channels] /me/accounts empty, checking granular permissions...")
-                debug_resp = requests.get(
-                    f"{GRAPH_API}/debug_token",
-                    params={
-                        "input_token": access_token,
-                        "access_token": access_token,
-                    },
-                    timeout=15,
-                )
-                if debug_resp.status_code == 200:
-                    debug_data = debug_resp.json().get("data", {})
-                    target_ids = set()
-                    for scope_item in debug_data.get("granular_scopes", []):
-                        for tid in scope_item.get("target_ids", []):
-                            target_ids.add(tid)
-                            
-                    if target_ids:
-                        logger.info(f"[list_channels] Found {len(target_ids)} target_ids from debug_token: {target_ids}")
-                        for pid in target_ids:
+            # Granular Permissions (New Facebook Auth Model)
+            # /me/accounts may omit some pages. We extract ALL Page IDs from the granular_scopes of the token.
+            logger.info("[list_channels] Checking granular permissions to supplement channels list...")
+            debug_resp = requests.get(
+                f"{GRAPH_API}/debug_token",
+                params={
+                    "input_token": access_token,
+                    "access_token": access_token,
+                },
+                timeout=15,
+            )
+            if debug_resp.status_code == 200:
+                debug_data = debug_resp.json().get("data", {})
+                target_ids = set()
+                for scope_item in debug_data.get("granular_scopes", []):
+                    for tid in scope_item.get("target_ids", []):
+                        target_ids.add(tid)
+                        
+                found_ids = {c.id for c in channels}
+                missing_ids = target_ids - found_ids
+                
+                if missing_ids:
+                    logger.info(f"[list_channels] Found {len(missing_ids)} missing target_ids from debug_token: {missing_ids}")
+                    for pid in missing_ids:
                             try:
                                 p_resp = requests.get(
                                     f"{GRAPH_API}/{pid}",
