@@ -25,13 +25,27 @@ router = APIRouter(prefix="/api/v1/video_manager", tags=["Video Manager"])
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
+# Maps video-platform provider to auth-manager provider and scope keyword
+_PROVIDER_AUTH_MAP = {
+    "youtube": ("google", "youtube"),
+    "facebook": ("facebook", ""),
+    "tiktok": ("tiktok", ""),
+}
+
+def _auth_provider(video_provider: str) -> str:
+    """Map video platform provider to auth provider name."""
+    return _PROVIDER_AUTH_MAP.get(video_provider, ("google", ""))[0]
+
 def _get_token(email: str = "", cred_id: str = "", token_id: str = "", provider: str = "google"):
     from core.token_resolver import resolve_token
-    token = resolve_token(email=email, cred_id=cred_id or token_id, provider=provider)
+    # Resolve auth provider — e.g. youtube→google, facebook→facebook
+    auth_prov = _PROVIDER_AUTH_MAP.get(provider, (provider, ""))[0]
+    scope_kw = _PROVIDER_AUTH_MAP.get(provider, ("", ""))[1]
+    token = resolve_token(email=email, cred_id=cred_id or token_id, provider=auth_prov, required_scope_keyword=scope_kw)
     if not token:
         raise HTTPException(
             status_code=401,
-            detail="No valid token found. Please authorize via Auth Manager first."
+            detail=f"No valid token found for provider='{provider}'. Please authorize via Auth Manager first."
         )
     return token
 
@@ -100,7 +114,7 @@ async def list_channels(
     cred_id: str = Query(""),
 ):
     """List all channels/pages for the authenticated account."""
-    token = _get_token(email=email, cred_id=cred_id)
+    token = _get_token(email=email, cred_id=cred_id, provider=provider)
     prov = _get_provider(provider)
     try:
         channels = prov.list_channels(token)
@@ -117,7 +131,7 @@ async def get_channel(
     cred_id: str = Query(""),
 ):
     """Get detailed info for a specific channel."""
-    token = _get_token(email=email, cred_id=cred_id)
+    token = _get_token(email=email, cred_id=cred_id, provider=provider)
     prov = _get_provider(provider)
     try:
         channel = prov.get_channel(channel_id, token)
@@ -142,7 +156,7 @@ async def list_videos(
     max_results: int = Query(50, ge=1, le=50),
 ):
     """List videos in a channel with pagination."""
-    token = _get_token(email=email, cred_id=cred_id)
+    token = _get_token(email=email, cred_id=cred_id, provider=provider)
     prov = _get_provider(provider)
     try:
         result = prov.list_videos(channel_id, token, page_token=page_token, max_results=max_results)
@@ -159,7 +173,7 @@ async def get_video(
     cred_id: str = Query(""),
 ):
     """Get detailed info for a specific video."""
-    token = _get_token(email=email, cred_id=cred_id)
+    token = _get_token(email=email, cred_id=cred_id, provider=provider)
     prov = _get_provider(provider)
     try:
         video = prov.get_video(video_id, token)
@@ -181,7 +195,7 @@ async def update_video(
     cred_id: str = Query(""),
 ):
     """Update video metadata (title, description, tags, privacy)."""
-    token = _get_token(email=email, cred_id=cred_id)
+    token = _get_token(email=email, cred_id=cred_id, provider=provider)
     prov = _get_provider(provider)
     try:
         result = prov.update_video(
@@ -210,7 +224,7 @@ async def delete_video(
     cred_id: str = Query(""),
 ):
     """Permanently delete a video."""
-    token = _get_token(email=email, cred_id=cred_id)
+    token = _get_token(email=email, cred_id=cred_id, provider=provider)
     prov = _get_provider(provider)
     try:
         result = prov.delete_video(video_id, token)
@@ -234,7 +248,7 @@ async def set_thumbnail(
     thumbnail_path: str = Query(..., description="Absolute path to thumbnail image (from File Manager)"),
 ):
     """Set custom thumbnail for a video (path from File Manager)."""
-    token = _get_token(email=email, cred_id=cred_id)
+    token = _get_token(email=email, cred_id=cred_id, provider=provider)
     prov = _get_provider(provider)
 
     if not os.path.isfile(thumbnail_path):
@@ -379,7 +393,7 @@ async def list_categories(
 ):
     """List available video categories for a provider/region."""
     if provider == "youtube":
-        token = _get_token(email=email, cred_id=cred_id)
+        token = _get_token(email=email, cred_id=cred_id, provider=provider)
         from providers.youtube.uploader import list_categories
         return list_categories(token, region_code=region_code)
     return {"status": "success", "categories": [], "note": f"Categories not available for {provider}"}

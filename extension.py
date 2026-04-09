@@ -40,10 +40,13 @@ class VideoManagerExtension(Extension):
         try:
             import providers.youtube  # triggers auto-register
             logger.info("✅ YouTube provider registered")
-            # Phase 2: import providers.facebook
-            # Phase 3: import providers.tiktok
         except Exception as e:
-            logger.error(f"Failed to register providers: {e}")
+            logger.error(f"Failed to register YouTube provider: {e}")
+        try:
+            import providers.facebook  # triggers auto-register
+            logger.info("✅ Facebook provider registered")
+        except Exception as e:
+            logger.warning(f"Facebook provider not loaded: {e}")
 
     def on_disable(self):
         """Shutdown upload queue gracefully."""
@@ -78,6 +81,21 @@ class VideoManagerExtension(Extension):
             logger.info("✅ YouTube provider loaded")
         except Exception as e:
             logger.warning(f"Could not pre-load YouTube provider: {e}")
+
+        try:
+            import importlib
+            fb_init = os.path.join(ext_dir, "providers", "facebook", "__init__.py")
+            if os.path.exists(fb_init):
+                spec = importlib.util.spec_from_file_location(
+                    "video_manager_providers_facebook", fb_init
+                )
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    sys.modules["video_manager_providers_facebook"] = mod
+                    spec.loader.exec_module(mod)
+            logger.info("✅ Facebook provider loaded")
+        except Exception as e:
+            logger.warning(f"Could not pre-load Facebook provider: {e}")
 
         try:
             # Load routes.py using absolute path to avoid name conflicts
