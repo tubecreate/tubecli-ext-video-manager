@@ -183,71 +183,98 @@
     /* Video grid */
     .video-grid {
       flex: 1; overflow-y: auto;
-      padding: 14px; display: none;
-      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-      gap: 12px; align-content: start;
+      padding: 16px; display: none;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 16px; align-content: start;
     }
     .video-grid.active { display: grid; }
+    
+    /* Support portrait layout for TikTok */
+    .video-grid.provider-tiktok {
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 16px;
+    }
 
     .video-card {
-      background: var(--surface);
+      background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden; cursor: pointer;
-      transition: all .2s;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
       display: flex; flex-direction: column;
+      height: 100%;
     }
     .video-card:hover {
       border-color: var(--accent);
-      transform: translateY(-2px);
-      box-shadow: 0 6px 24px rgba(59,130,246,.12);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 30px rgba(59,130,246,.16);
     }
     .video-card.selected { border-color: var(--accent); background: var(--accent-glow); }
 
-    .video-thumb {
-      width: 100%; height: auto; aspect-ratio: 16/9; object-fit: cover;
-      background: var(--surface3); display: block;
+    .video-thumb-container {
       position: relative;
+      width: 100%;
+      aspect-ratio: 16/9;
+      overflow: hidden;
+      background: var(--surface3);
+      flex-shrink: 0;
+    }
+    .video-grid.provider-tiktok .video-thumb-container {
+      aspect-ratio: 9/16;
+    }
+
+    .video-thumb {
+      width: 100%; height: 100%; object-fit: cover;
+      display: block; transition: transform 0.3s ease;
+    }
+    .video-card:hover .video-thumb {
+      transform: scale(1.04);
     }
     .video-thumb-placeholder {
-      width: 100%; aspect-ratio: 16/9;
+      width: 100%; height: 100%;
       background: linear-gradient(135deg, var(--surface3), var(--surface2));
       display: flex; align-items: center; justify-content: center;
-      font-size: 28px; color: var(--text3);
+      font-size: 32px; color: var(--text3);
     }
     .video-duration {
-      position: absolute; bottom: 6px; right: 8px;
-      background: rgba(0,0,0,.85); color: #fff;
-      font-size: 10px; font-weight: 600; padding: 2px 5px; border-radius: 3px;
+      position: absolute; bottom: 8px; right: 8px;
+      background: rgba(0,0,0,.75); color: #fff;
+      font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
+      backdrop-filter: blur(2px);
     }
     .video-status-badge {
-      position: absolute; top: 6px; left: 6px;
+      position: absolute; top: 8px; left: 8px;
       font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
       text-transform: uppercase; letter-spacing: .04em;
+      backdrop-filter: blur(2px);
+      box-shadow: 0 2px 4px rgba(0,0,0,0.25);
     }
-    .badge-public { background: rgba(34,197,94,.2); color: var(--green); }
-    .badge-private { background: rgba(239,68,68,.2); color: var(--red); }
-    .badge-unlisted { background: rgba(234,179,8,.2); color: var(--yellow); }
+    .badge-public { background: rgba(34,197,94,.85); color: #fff; }
+    .badge-private { background: rgba(239,68,68,.85); color: #fff; }
+    .badge-unlisted { background: rgba(234,179,8,.85); color: #fff; }
 
-    .video-body { padding: 10px; display: flex; flex-direction: column; flex-grow: 1; }
-    .video-title { font-size: 12px; font-weight: 600; line-height: 1.4; margin-bottom: 6px;
-      overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; flex-shrink: 0; }
-    .video-meta { display: flex; gap: 10px; font-size: 10px; color: var(--text2); flex-wrap: wrap; margin-bottom: 6px; flex-shrink: 0; }
-    .video-meta span { display: flex; align-items: center; gap: 3px; }
+    .video-body { padding: 12px 14px 8px; display: flex; flex-direction: column; flex-grow: 1; }
+    .video-title { font-size: 13px; font-weight: 600; line-height: 1.4; margin-bottom: 6px;
+      color: var(--text);
+      overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; 
+      height: 36px; flex-shrink: 0; }
+    .video-meta { display: flex; gap: 10px; font-size: 11px; color: var(--text2); flex-wrap: wrap; margin-bottom: 6px; flex-shrink: 0; }
+    .video-meta span { display: flex; align-items: center; gap: 4px; }
     .video-actions {
-      display: flex; gap: 4px; padding: 6px 10px 10px; flex-shrink: 0; margin-top: auto;
+      display: flex; gap: 6px; padding: 6px 14px 14px; flex-shrink: 0; margin-top: auto;
     }
     .video-action-btn {
-      flex: 1; padding: 5px; border-radius: 5px; border: none; cursor: pointer;
-      font-size: 10px; font-family: inherit; transition: all .2s; font-weight: 500;
+      flex: 1; padding: 6px; border-radius: 6px; border: 1px solid transparent; cursor: pointer;
+      font-size: 11px; font-family: inherit; transition: all .2s; font-weight: 600;
+      display: flex; align-items: center; justify-content: center; gap: 4px;
     }
-    .vab-edit { background: rgba(59,130,246,.12); color: var(--accent); }
-    .vab-edit:hover { background: rgba(59,130,246,.22); }
-    .vab-delete { background: rgba(239,68,68,.1); color: var(--red); }
-    .vab-delete:hover { background: rgba(239,68,68,.2); }
-    .vab-link { background: rgba(168,85,247,.1); color: var(--purple); }
-    .vab-link:hover { background: rgba(168,85,247,.2); }
+    .vab-edit { background: rgba(59,130,246,.12); color: var(--accent); border-color: rgba(59,130,246,.2); }
+    .vab-edit:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .vab-delete { background: rgba(239,68,68,.1); color: var(--red); border-color: rgba(239,68,68,.2); }
+    .vab-delete:hover { background: var(--red); color: #fff; border-color: var(--red); }
+    .vab-link { background: rgba(168,85,247,.1); color: var(--purple); border-color: rgba(168,85,247,.2); }
+    .vab-link:hover { background: var(--purple); color: #fff; border-color: var(--purple); }
 
     /* Pagination */
     .pagination {
@@ -825,7 +852,7 @@ async function loadVideos(pageToken = '') {
   } else {
     grid.insertAdjacentHTML('beforeend', '<div style="grid-column:1/-1;display:flex;justify-content:center;padding:20px;"><div class="spinner"></div></div>');
   }
-  grid.classList.add('active');
+  grid.className = `video-grid active provider-${currentProvider}`;
   emptyState.style.display = 'none';
 
   try {
@@ -885,7 +912,7 @@ function renderVideos(videos, append = false) {
 
     return `
     <div class="video-card" data-id="${v.id}">
-      <div style="position:relative;">
+      <div class="video-thumb-container">
         ${v.thumbnail_url
           ? `<img class="video-thumb" src="${v.thumbnail_url}" alt="${escHtml(v.title)}">`
           : `<div class="video-thumb-placeholder">🎬</div>`}
