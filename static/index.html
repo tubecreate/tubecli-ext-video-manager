@@ -186,6 +186,7 @@
       padding: 16px; display: none;
       grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
       gap: 16px; align-content: start;
+      min-height: 0; /* Force grid container to shrink and scroll internally */
     }
     .video-grid.active { display: grid; }
     
@@ -203,7 +204,6 @@
       transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       position: relative;
       display: flex; flex-direction: column;
-      height: 100%;
     }
     .video-card:hover {
       border-color: var(--accent);
