@@ -32,6 +32,7 @@ def resolve_token(
     cred_id: str = "",
     provider: str = "google",
     required_scope_keyword: str = "youtube",
+    strict: bool = False,  # If True + cred_id given: don't fallback to other accounts
 ) -> Optional[str]:
     """
     Get an active access token from Auth Manager.
@@ -39,7 +40,7 @@ def resolve_token(
     scopes in list_tokens() are short names: 'youtube', 'youtube_upload', 'calendar', etc.
 
     Priority:
-    1. token_id / cred_id match
+    1. token_id / cred_id match  (strict=True stops here if cred_id provided)
     2. email match among tokens for that provider
     3. scope keyword auto-detect (e.g. 'youtube' in scopes list)
     4. fallback: any active/expired-with-refresh token for provider
@@ -62,6 +63,11 @@ def resolve_token(
                 if tok:
                     return tok
         logger.warning(f"No active token for cred_id='{cred_id}'")
+        # IMPORTANT: when a specific account was requested but is not active,
+        # do NOT silently fall through to another account's token.
+        # Return None so the caller can force-refresh or show a clear error.
+        if strict or cred_id:
+            return None
 
     # 2. Email match
     if email:

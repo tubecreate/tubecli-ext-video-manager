@@ -415,7 +415,7 @@
   <div class="provider-tabs">
     <div class="provider-tab active" data-provider="youtube" onclick="switchProvider('youtube')">📺 YouTube</div>
     <div class="provider-tab" data-provider="facebook" onclick="switchProvider('facebook')">📘 Facebook</div>
-    <div class="provider-tab soon" title="Coming soon — Phase 3">🎵 TikTok</div>
+    <div class="provider-tab" data-provider="tiktok" onclick="switchProvider('tiktok')">🎵 TikTok</div>
   </div>
   <span class="header-sub" id="header-sub">Multi-platform video management</span>
 </div>
@@ -683,12 +683,16 @@ async function loadAccounts() {
     const tokens = (data.tokens || []).filter(t => {
       const scopes = t.scopes || [];
       if (currentProvider === 'youtube') return scopes.some(s => s.includes('youtube'));
-      if (currentProvider === 'facebook') return true; // Facebook uses different granular scopes, allow if returned
+      if (currentProvider === 'facebook') return true;
+      if (currentProvider === 'tiktok') return true; // TikTok tokens are provider-filtered already
       return true;
     });
 
     if (!tokens.length) {
       sel.innerHTML = '<option value="">Chưa có tài khoản được cấp quyền</option>';
+      document.getElementById('channelList').innerHTML =
+        `<div class="empty-state" style="padding:20px;"><div class="empty-icon">🔑</div>
+        <div style="font-size:11px;color:var(--text2);text-align:center;">Chưa cấp quyền ${currentProvider}.<br>Vào <a href="/auth-manager" style="color:var(--accent)">Auth Manager</a> để thêm tài khoản.</div></div>`;
       return;
     }
 
@@ -731,17 +735,19 @@ function onAccountChange() {
   const sel = document.getElementById('accountSelect');
   const opt = sel.options[sel.selectedIndex];
   currentEmail = sel.value;
-  currentTokenId = opt ? (opt.dataset.token || '') : '';
+  currentTokenId = opt ? (opt.getAttribute('data-token') || '') : '';
   currentChannel = null;
   allVideos = [];
+  pageTokenStack = [''];
+  currentPage = 0;
   document.getElementById('videoGrid').classList.remove('active');
   document.getElementById('emptyState').style.display = 'flex';
   document.getElementById('pagination').style.display = 'none';
   document.getElementById('searchInput').style.display = 'none';
   document.getElementById('btnRefreshVideos').style.display = 'none';
   document.getElementById('btnUpload').style.display = 'none';
-  document.getElementById('toolbarTitle').innerHTML = 'Chọn kênh để xem video';
-  document.getElementById('toolbarCount').textContent = '';
+  document.getElementById('toolbarTitle').innerHTML = 'Chọn kênh để xem video <span id="toolbarCount"></span>';
+  console.log('[onAccountChange] email:', currentEmail, 'token_id:', currentTokenId);
   if (currentEmail) loadChannels();
   else document.getElementById('channelList').innerHTML =
     `<div class="empty-state" style="padding:20px;"><div class="empty-icon">📺</div>
@@ -759,19 +765,30 @@ async function loadChannels() {
       : `email=${encodeURIComponent(currentEmail)}`;
     const res = await fetch(API(`/channels?provider=${currentProvider}&${authParam}`));
     const data = await res.json();
+
+    // Show error detail from API if HTTP failed
+    if (!res.ok) {
+      const errMsg = data.detail || `HTTP ${res.status}`;
+      list.innerHTML = `<div class="empty-state" style="padding:16px;"><div class="empty-icon" style="font-size:28px;">❌</div>
+        <div style="font-size:11px;color:var(--red);text-align:center;">${errMsg}</div>
+        <button class="btn btn-secondary" style="margin-top:10px;font-size:11px;" onclick="window.location.href='/auth-manager'">🔑 Cấp quyền lại</button>
+        </div>`;
+      return;
+    }
+
     const channels = data.channels || [];
 
     if (!channels.length) {
       list.innerHTML = `<div class="empty-state" style="padding:20px;">
         <div class="empty-icon">📺</div>
-        <div style="font-size:11px;color:var(--text2)">Không tìm thấy kênh nào</div></div>`;
+        <div style="font-size:11px;color:var(--text2);text-align:center;">Không tìm thấy kênh nào</div></div>`;
       return;
     }
 
     list.innerHTML = channels.map(ch => `
       <div class="channel-item" data-id="${ch.id}" onclick="selectChannel(${JSON.stringify(ch).replace(/"/g,'&quot;')})">
         ${ch.thumbnail_url
-          ? `<img class="channel-thumb" src="${ch.thumbnail_url}" alt="${ch.title}">`
+          ? `<img class="channel-thumb" src="${ch.thumbnail_url}" alt="${ch.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="channel-thumb" style="display:none;align-items:center;justify-content:center;font-size:16px;">📺</div>`
           : `<div class="channel-thumb" style="display:flex;align-items:center;justify-content:center;font-size:16px;">📺</div>`}
         <div class="channel-info">
           <h3>${escHtml(ch.title)}</h3>
@@ -816,16 +833,18 @@ async function loadVideos(pageToken = '') {
     const authParam = currentTokenId
       ? `token_id=${encodeURIComponent(currentTokenId)}`
       : `email=${encodeURIComponent(currentEmail)}`;
-    const url = API(`/videos?provider=${currentProvider}&${authParam}&channel_id=${currentChannel.id}&max_results=20${pageToken ? '&page_token=' + pageToken : ''}`);
+
+    // For YouTube: pass uploads_playlist_id to save quota (1 unit vs 100 units)
+    const uploadsPlaylistId = (currentProvider === 'youtube' && currentChannel.extra && currentChannel.extra.uploads_playlist)
+      ? `&uploads_playlist_id=${encodeURIComponent(currentChannel.extra.uploads_playlist)}`
+      : '';
+
+    const url = API(`/videos?provider=${currentProvider}&${authParam}&channel_id=${currentChannel.id}&max_results=20${pageToken ? '&page_token=' + pageToken : ''}${uploadsPlaylistId}`);
     const res = await fetch(url);
     const data = await res.json();
 
     if (!res.ok) {
       throw new Error(data.detail || `HTTP ${res.status}`);
-    }
-
-    if (pageToken && pageTokenStack.includes(pageToken)) {
-      // If we are loading an old page or searching, append is true
     }
 
     if (pageToken) {
@@ -842,7 +861,7 @@ async function loadVideos(pageToken = '') {
     renderVideos(data.videos || [], !!pageToken);
     updatePagination(data.total || allVideos.length, nextToken);
     const countEl = document.getElementById('toolbarCount');
-    if (countEl) countEl.textContent = data.total ? `(${formatNumber(data.total)} tổng)` : '';
+    if (countEl) countEl.textContent = data.total ? `(${formatNumber(data.total)} tổng)` : `(${allVideos.length} videos)`;
   } catch(e) {
     if (!pageToken) grid.innerHTML = `<div style="grid-column:1/-1;color:var(--red);padding:20px;text-align:center;">❌ ${e.message}</div>`;
     else toast('error', `Lỗi tải thêm video: ${e.message}`);
@@ -1089,16 +1108,20 @@ async function saveEdit() {
     tags, privacy: document.getElementById('editPrivacy').value,
   };
 
+  const authParam = currentTokenId
+    ? `token_id=${encodeURIComponent(currentTokenId)}`
+    : `email=${encodeURIComponent(currentEmail)}`;
+
   try {
     const res = await fetch(
-      API(`/videos/${videoId}?provider=${currentProvider}&email=${encodeURIComponent(currentEmail)}`),
+      API(`/videos/${videoId}?provider=${currentProvider}&${authParam}`),
       { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }
     );
     const data = await res.json();
     if (data.success) {
       // Set thumbnail if provided
       if (thumbnailPath) {
-        await fetch(API(`/videos/${videoId}/thumbnail?provider=${currentProvider}&email=${encodeURIComponent(currentEmail)}&thumbnail_path=${encodeURIComponent(thumbnailPath)}`), {method:'POST'});
+        await fetch(API(`/videos/${videoId}/thumbnail?provider=${currentProvider}&${authParam}&thumbnail_path=${encodeURIComponent(thumbnailPath)}`), {method:'POST'});
       }
       toast('success', '✅ Video đã được cập nhật!');
       closeEditModal();
@@ -1126,9 +1149,13 @@ function closeConfirm() { document.getElementById('confirmDialog').classList.rem
 async function executeDelete() {
   if (!_pendingDeleteId) return;
   closeConfirm();
+  const authParam = currentTokenId
+    ? `token_id=${encodeURIComponent(currentTokenId)}`
+    : `email=${encodeURIComponent(currentEmail)}`;
+
   try {
     const res = await fetch(
-      API(`/videos/${_pendingDeleteId}?provider=${currentProvider}&email=${encodeURIComponent(currentEmail)}`),
+      API(`/videos/${_pendingDeleteId}?provider=${currentProvider}&${authParam}`),
       { method: 'DELETE' }
     );
     const data = await res.json();

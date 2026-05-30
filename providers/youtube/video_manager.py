@@ -91,39 +91,79 @@ def list_videos(
     access_token: str,
     page_token: str = "",
     max_results: int = 50,
+    uploads_playlist_id: str = "",  # Optional: pass from channel.extra["uploads_playlist"] to save quota
 ) -> dict:
     """
     List videos in a channel (ordered by date, newest first).
-    Uses search.list + videos.list for full metadata.
+
+    Uses playlistItems.list on the "uploads" playlist (1 quota unit) if
+    uploads_playlist_id is provided.  Falls back to search.list (100 quota
+    units) otherwise.
+
     Returns: { videos: [...], next_page_token: str, total: int }
     """
     try:
         service = _build_service(access_token)
 
-        # Step 1: Search for video IDs in channel
-        search_params = {
-            "part": "id",
-            "channelId": channel_id,
-            "type": "video",
-            "order": "date",
-            "maxResults": min(max_results, 50),
-        }
-        if page_token:
-            search_params["pageToken"] = page_token
+        if not uploads_playlist_id:
+            # Fetch the uploads playlist ID from the channel resource (1 unit)
+            ch_resp = service.channels().list(
+                part="contentDetails",
+                id=channel_id,
+            ).execute()
+            items = ch_resp.get("items", [])
+            if items:
+                uploads_playlist_id = (
+                    items[0]
+                    .get("contentDetails", {})
+                    .get("relatedPlaylists", {})
+                    .get("uploads", "")
+                )
 
-        search_resp = service.search().list(**search_params).execute()
-        video_ids = [
-            item["id"]["videoId"]
-            for item in search_resp.get("items", [])
-            if item.get("id", {}).get("videoId")
-        ]
-        next_page = search_resp.get("nextPageToken", "")
-        total = search_resp.get("pageInfo", {}).get("totalResults", 0)
+        if uploads_playlist_id:
+            # Use playlistItems (costs 1 quota unit)
+            pl_params = {
+                "part": "contentDetails",
+                "playlistId": uploads_playlist_id,
+                "maxResults": min(max_results, 50),
+            }
+            if page_token:
+                pl_params["pageToken"] = page_token
+
+            pl_resp = service.playlistItems().list(**pl_params).execute()
+            video_ids = [
+                item["contentDetails"]["videoId"]
+                for item in pl_resp.get("items", [])
+                if item.get("contentDetails", {}).get("videoId")
+            ]
+            next_page = pl_resp.get("nextPageToken", "")
+            total = pl_resp.get("pageInfo", {}).get("totalResults", 0)
+        else:
+            # Fallback: search (costs 100 quota units — avoid if possible)
+            logger.warning(f"No uploads playlist found for channel '{channel_id}', falling back to search.list (100 quota units)")
+            search_params = {
+                "part": "id",
+                "channelId": channel_id,
+                "type": "video",
+                "order": "date",
+                "maxResults": min(max_results, 50),
+            }
+            if page_token:
+                search_params["pageToken"] = page_token
+
+            search_resp = service.search().list(**search_params).execute()
+            video_ids = [
+                item["id"]["videoId"]
+                for item in search_resp.get("items", [])
+                if item.get("id", {}).get("videoId")
+            ]
+            next_page = search_resp.get("nextPageToken", "")
+            total = search_resp.get("pageInfo", {}).get("totalResults", 0)
 
         if not video_ids:
             return {"videos": [], "next_page_token": "", "total": 0}
 
-        # Step 2: Batch fetch full video details
+        # Step 2: Batch fetch full video details (1 quota unit per 50 videos)
         videos_resp = service.videos().list(
             part="snippet,status,statistics,contentDetails",
             id=",".join(video_ids),

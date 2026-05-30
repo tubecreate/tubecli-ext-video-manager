@@ -189,12 +189,27 @@ class FacebookProvider(VideoProvider):
             logger.error(f"get_channel failed: {e}")
             return None
 
+    def _get_page_token(self, channel_id: str, user_access_token: str) -> str:
+        """Resolve the page-specific access token using the user access token."""
+        try:
+            pages = self.list_channels(user_access_token)
+            for p in pages:
+                if p.id == channel_id:
+                    pt = p.extra.get("access_token")
+                    if pt:
+                        logger.info(f"[Facebook] Resolved page token for page ID {channel_id}")
+                        return pt
+        except Exception as e:
+            logger.warning(f"[Facebook] Failed to resolve page token for {channel_id}: {e}")
+        return user_access_token
+
     def list_videos(self, channel_id: str, access_token: str,
                     page_token: str = "", max_results: int = 50) -> dict:
         """List videos on a Facebook Page."""
         try:
+            page_access_token = self._get_page_token(channel_id, access_token)
             params = {
-                "access_token": access_token,
+                "access_token": page_access_token,
                 "fields": "id,title,description,length,views,likes.summary(true),created_time,permalink_url,thumbnails",
                 "limit": max_results,
             }
@@ -509,3 +524,6 @@ class FacebookProvider(VideoProvider):
             return {"status": "error", "message": f"Finish failed: {finish_resp.text[:300]}"}
 
 
+# Auto-register when module is imported
+from core import provider_registry
+provider_registry.register("facebook", FacebookProvider)

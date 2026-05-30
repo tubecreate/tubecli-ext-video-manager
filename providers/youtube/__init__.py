@@ -29,8 +29,9 @@ class YouTubeProvider(VideoProvider):
         access_token: str,
         page_token: str = "",
         max_results: int = 50,
+        uploads_playlist_id: str = "",
     ) -> dict:
-        return _vm.list_videos(channel_id, access_token, page_token, max_results)
+        return _vm.list_videos(channel_id, access_token, page_token, max_results, uploads_playlist_id)
 
     def get_video(self, video_id: str, access_token: str) -> Optional[VideoMetadata]:
         raw = _vm.get_video(video_id, access_token)
