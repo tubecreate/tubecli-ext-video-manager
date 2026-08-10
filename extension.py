@@ -116,11 +116,26 @@ class VideoManagerExtension(Extension):
             return None
 
     def get_nodes(self) -> Dict[str, Any]:
-        """Return workflow nodes provided by this extension."""
+        """Return workflow nodes provided by this extension.
+
+        Loaded by absolute path, not `from nodes.youtube_upload_node import ...`.
+        A bare import is resolved against sys.path, and every installed extension
+        contributes its own directory named `nodes`; whichever landed there first
+        answered. The file below has always existed, yet this reliably logged
+        "Could not load YouTube upload node: No module named
+        'nodes.youtube_upload_node'" — it was searching a different extension's
+        package. So youtube_upload never reached the workflow palette.
+        """
         try:
             self.setup()
-            from nodes.youtube_upload_node import YouTubeUploadNode
-            return {"youtube_upload": YouTubeUploadNode}
+            import importlib.util
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "nodes", "youtube_upload_node.py")
+            spec = importlib.util.spec_from_file_location(
+                "video_manager_youtube_upload_node", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return {"youtube_upload": mod.YouTubeUploadNode}
         except Exception as e:
             logger.warning(f"Could not load YouTube upload node: {e}")
             return {}
