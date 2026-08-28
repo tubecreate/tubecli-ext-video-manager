@@ -33,11 +33,22 @@ def _parse_video_item(item: dict) -> dict:
     privacy = status.get("privacyStatus", "private")
     upload_status = status.get("uploadStatus", "")
 
-    # Determine unified status
-    if upload_status == "uploaded":
+    # Determine unified status.
+    #
+    # YouTube's uploadStatus enum is deleted / failed / processed / rejected /
+    # uploaded. "processed" is the TERMINAL state of every normal video —
+    # "uploaded" only means the bytes arrived and processing has not finished.
+    # This used to treat only "uploaded" as finished, so every video on a
+    # healthy channel got status="processed": the card fell through to the red
+    # badge and printed PROCESSED, nothing could be filtered by privacy, and the
+    # edit modal pre-filled its privacy <select> with a value it has no option
+    # for — so saving without touching that field sent privacy "" to the API.
+    if upload_status in ("uploaded", "processed"):
         unified_status = privacy
-    elif upload_status:
+    elif upload_status in ("failed", "rejected", "deleted"):
         unified_status = upload_status
+    elif upload_status:
+        unified_status = "processing"
     else:
         unified_status = privacy
 

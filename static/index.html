@@ -1,1253 +1,825 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Manager — TubeCLI</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #080b12;
-      --surface: #0e1118;
-      --surface2: #141921;
-      --surface3: #1a2030;
-      --border: #1e2736;
-      --border2: #243047;
-      --text: #e8ecf4;
-      --text2: #8899bb;
-      --text3: #4a5980;
-      --accent: #3b82f6;
-      --accent2: #2563eb;
-      --accent-glow: rgba(59,130,246,0.18);
-      --red: #ef4444;
-      --green: #22c55e;
-      --yellow: #eab308;
-      --purple: #a855f7;
-      --radius: 10px;
-      --yt-red: #ff0000;
-    }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: 'Inter', system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      height: 100vh;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+<style>
+/* ── Theme ────────────────────────────────────────────────────────────────
+   Only the variable names the dashboard injects into extension iframes are
+   used (webui/static/app.js syncThemeToIframe): --bg --bg2 --bg3 --bg-hover
+   --border --border-subtle --text --text2 --text-muted --primary
+   --primary-hover --primary-light --green --orange --red --purple --cyan.
+   The :root block is a LIGHT fallback for opening the page standalone; the
+   media query keeps that case readable in the dark. Inside the dashboard the
+   injected values win (they carry !important), so the page follows whatever
+   theme the dashboard is in — the previous version defined 16 private hex
+   tokens the injection never touched, which is why it stayed dark-on-dark
+   inside the light theme. */
+:root {
+  --bg: #f7f8fa; --bg2: #ffffff; --bg3: rgba(255,255,255,0.9); --bg-hover: rgba(15,23,42,0.05);
+  --border: rgba(15,23,42,0.1); --border-subtle: rgba(15,23,42,0.06);
+  --text: #1e293b; --text2: #475569; --text-muted: #64748b;
+  --primary: #5276EB; --primary-hover: #3d5fd4; --primary-light: rgba(82,118,235,0.12);
+  --green: #22c55e; --orange: #f59e0b; --red: #ef4444; --purple: #7c5ce7; --cyan: #5276EB;
+  --radius: 10px;
+  --mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1a1a1a; --bg2: #1e1e1e; --bg3: #262626; --bg-hover: #303030;
+    --border: #333; --border-subtle: #2a2a2a;
+    --text: #ededed; --text2: #9ca3af; --text-muted: #6b7280;
+  }
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { font-family: 'Inter', -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; overflow: hidden; }
+.material-symbols-outlined { font-size: 18px; line-height: 1; vertical-align: middle; font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20; }
+button { font-family: inherit; }
+a { color: var(--primary); }
+:focus-visible { outline: none; border-color: var(--primary) !important; box-shadow: 0 0 0 3px rgba(82,118,235,0.25); }
+::-webkit-scrollbar { width: 8px; height: 8px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
-    /* ── Header ── */
-    .header {
-      display: flex; align-items: center; gap: 12px;
-      padding: 14px 20px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .header-icon { font-size: 22px; }
-    .header h1 { font-size: 16px; font-weight: 600; }
-    .header-sub { font-size: 12px; color: var(--text2); margin-left: auto; }
+/* ── Dashboard components (metrics copied from webui/static/style.css) ── */
+.btn-primary { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; background: var(--primary); color: #fff; cursor: pointer; transition: all .2s; white-space: nowrap; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+.btn-secondary { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.9rem; font-weight: 500; background: var(--bg3); color: var(--text); cursor: pointer; transition: all .2s; white-space: nowrap; }
+.btn-secondary:hover { border-color: var(--primary); background: var(--primary-light); }
+.btn-sm { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.8rem; background: var(--bg3); color: var(--text); cursor: pointer; white-space: nowrap; }
+.btn-sm:hover { border-color: var(--primary); }
+.btn-danger { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: none; border-radius: 6px; font-size: 0.8rem; background: rgba(239,68,68,0.15); color: var(--red); cursor: pointer; }
+.btn-icon { width: 28px; height: 28px; border-radius: 6px; border: 1px solid transparent; background: none; color: var(--text2); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.btn-icon:hover { background: var(--bg-hover); color: var(--text); }
+.btn-close { background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 4px; }
+.btn-close:hover { color: var(--red); }
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; white-space: nowrap; }
+.tag.green { background: rgba(34,197,94,0.15); color: var(--green); }
+.tag.orange { background: rgba(245,158,11,0.15); color: var(--orange); }
+.tag.red { background: rgba(239,68,68,0.15); color: var(--red); }
+.tag.muted { background: var(--bg-hover); color: var(--text2); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 999px; font-size: 0.78rem; font-weight: 500; color: var(--text2); background: var(--bg3); cursor: pointer; white-space: nowrap; }
+.chip:hover { border-color: var(--primary); }
+.chip.active { background: var(--primary-light); color: var(--primary); border-color: var(--primary); }
+.chip:disabled { opacity: .45; cursor: not-allowed; }
+.count { display: inline-block; min-width: 18px; padding: 0 6px; border-radius: 999px; background: var(--bg-hover); color: var(--text2); font-size: 0.68rem; font-weight: 600; text-align: center; line-height: 18px; }
+.chip.active .count { background: rgba(82,118,235,0.2); color: var(--primary); }
+select, input[type=text], textarea { width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 0.9rem; font-family: inherit; }
+select:focus, input:focus, textarea:focus { outline: none; border-color: var(--primary); }
+textarea { resize: vertical; min-height: 80px; }
+label.lbl { display: block; font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+.form-group { margin-bottom: 14px; }
+.hint { font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; }
 
-    /* Provider tabs */
-    .provider-tabs {
-      display: flex; gap: 4px; margin-left: 20px;
-    }
-    .provider-tab {
-      display: flex; align-items: center; gap: 6px;
-      padding: 5px 12px; border-radius: 6px; cursor: pointer;
-      font-size: 12px; font-weight: 500;
-      background: transparent; color: var(--text2);
-      border: 1px solid transparent; transition: all .2s;
-    }
-    .provider-tab.active {
-      background: var(--accent-glow);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-    .provider-tab:hover:not(.active) { background: var(--surface3); color: var(--text); }
-    .provider-tab.soon { opacity: .4; cursor: not-allowed; }
+/* ── Layout ─────────────────────────────────────────────────────────── */
+#app { display: flex; flex-direction: column; height: 100vh; }
+.context-bar { height: 52px; flex-shrink: 0; background: var(--bg2); border-bottom: 1px solid var(--border); padding: 8px 20px; display: flex; align-items: center; gap: 12px; }
+.tabs { display: flex; gap: 6px; }
+.context-bar select { width: auto; padding: 8px 12px; font-size: 0.85rem; max-width: 280px; }
+.write-as { font-size: 0.76rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.filter-bar { height: 48px; flex-shrink: 0; padding: 8px 20px; display: flex; align-items: center; gap: 10px; overflow-x: auto; }
+.search { display: flex; align-items: center; gap: 8px; width: 260px; flex-shrink: 0; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg3); height: 34px; }
+.search input { border: none; background: none; padding: 0; font-size: 0.85rem; height: 100%; }
+.search input:focus { box-shadow: none; }
+.kbd { font-family: var(--mono); font-size: 0.68rem; padding: 1px 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); }
+.view-toggle { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.view-toggle .btn-icon { border-radius: 0; border: none; }
+.view-toggle .btn-icon.on { background: var(--bg-hover); color: var(--text); }
+main { flex: 1; min-height: 0; overflow: auto; padding: 0 20px 20px; }
 
-    /* ── Main layout ── */
-    .layout {
-      display: grid;
-      grid-template-columns: 260px 1fr;
-      overflow: hidden;
-      flex: 1;
-    }
+/* ── Table ──────────────────────────────────────────────────────────── */
+.table-container { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+table { width: 100%; border-collapse: collapse; }
+th { background: var(--bg2); padding: 12px 16px; font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-align: left; text-transform: uppercase; letter-spacing: 0.5px; position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+th button { background: none; border: none; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; padding: 0; }
+th button .material-symbols-outlined { font-size: 16px; opacity: .4; }
+th.sorted { color: var(--text); } th.sorted button .material-symbols-outlined { opacity: 1; color: var(--primary); }
+td { padding: 12px 16px; font-size: 0.85rem; border-top: 1px solid var(--border); vertical-align: middle; }
+tbody tr { cursor: default; }
+tbody tr:hover td { background: var(--bg-hover); }
+tbody tr:focus-within td { background: var(--bg-hover); }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+th.num { text-align: right; }
+.vcell { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.thumb { width: 96px; height: 54px; border-radius: 6px; flex-shrink: 0; background: var(--bg-hover); position: relative; overflow: hidden; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb.tall { width: 40px; height: 72px; }
+.dur { position: absolute; right: 4px; bottom: 4px; background: rgba(0,0,0,0.75); color: #fff; font-family: var(--mono); font-size: 0.68rem; padding: 1px 5px; border-radius: 3px; }
+.vtitle { font-size: 0.85rem; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.vsub { font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-actions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity .15s; }
+tr:hover .row-actions, tr:focus-within .row-actions { opacity: 1; }
+@media (hover: none) { .row-actions { opacity: 1; } }
+.tfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--bg2); font-size: 0.8rem; color: var(--text-muted); }
 
-    /* ── Sidebar ── */
-    .sidebar {
-      background: var(--surface);
-      border-right: 1px solid var(--border);
-      display: flex; flex-direction: column;
-      overflow: hidden;
-    }
-    .sidebar-section { padding: 14px 14px 8px; }
-    .sidebar-label {
-      font-size: 10px; font-weight: 600; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--text3); margin-bottom: 8px;
-    }
+/* ── Grid ───────────────────────────────────────────────────────────── */
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; }
+.card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; transition: all .2s; position: relative; }
+.card:hover { border-color: var(--primary); transform: translateY(-2px); }
+.card .cthumb { aspect-ratio: 16 / 9; background: var(--bg-hover); position: relative; }
+.card.tall .cthumb { aspect-ratio: 9 / 16; }
+.card .cthumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.card .cbody { padding: 12px 14px; }
+.card .vtitle { min-height: 2.7em; font-size: 0.88rem; }
+.card .cmeta { display: flex; gap: 10px; font-size: 0.78rem; color: var(--text-muted); margin-top: 6px; align-items: center; }
+.card .cmeta .material-symbols-outlined { font-size: 15px; }
+.card .cfoot { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; font-size: 0.75rem; color: var(--text-muted); }
+.card .cactions { position: absolute; top: 8px; right: 8px; display: flex; gap: 4px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 2px; opacity: 0; transition: opacity .15s; }
+.card:hover .cactions, .card:focus-within .cactions { opacity: 1; }
 
-    /* Account selector */
-    .account-select {
-      width: 100%;
-      background: var(--surface2); border: 1px solid var(--border2);
-      color: var(--text); border-radius: 7px; padding: 8px 10px;
-      font-size: 12px; outline: none; cursor: pointer; font-family: inherit;
-      transition: border-color .2s;
-    }
-    .account-select:focus { border-color: var(--accent); }
-    .account-select option { background: var(--surface2); }
+/* ── States ─────────────────────────────────────────────────────────── */
+.empty { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+.empty .material-symbols-outlined { font-size: 44px; opacity: .5; margin-bottom: 10px; }
+.empty h3 { color: var(--text); font-size: 1.05rem; margin-bottom: 6px; }
+.empty p { font-size: 0.88rem; max-width: 46ch; margin: 0 auto 14px; }
+.skeleton td > div { height: 14px; border-radius: 4px; background: var(--bg-hover); animation: shimmer 1.2s ease-in-out infinite; }
+@keyframes shimmer { 50% { opacity: .5; } }
+.banner { display: flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 8px; margin-bottom: 14px; font-size: 0.88rem; font-weight: 600; }
+.banner.err { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+.banner.warn { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: var(--orange); }
 
-    .refresh-btn {
-      width: 100%; margin-top: 6px;
-      background: var(--surface3); border: 1px solid var(--border2);
-      color: var(--text2); border-radius: 7px; padding: 6px; cursor: pointer;
-      font-size: 11px; font-family: inherit; transition: all .2s;
-      display: flex; align-items: center; justify-content: center; gap: 5px;
-    }
-    .refresh-btn:hover { background: var(--border2); color: var(--text); }
+/* ── Modals ─────────────────────────────────────────────────────────── */
+dialog { border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg2); color: var(--text); padding: 0; width: 520px; max-width: 95vw; }
+dialog::backdrop { background: rgba(0,0,0,0.6); backdrop-filter: blur(8px); }
+dialog .mhead { display: flex; justify-content: space-between; align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--border); }
+dialog .mhead h2 { font-size: 1.1rem; }
+dialog .mbody { padding: 20px 24px; max-height: 70vh; overflow-y: auto; }
+dialog .mfoot { display: flex; gap: 10px; justify-content: flex-end; padding: 16px 24px; border-top: 1px solid var(--border); }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.picker { border: 2px dashed var(--border); border-radius: 8px; padding: 14px; text-align: center; cursor: pointer; color: var(--text-muted); font-size: 0.85rem; background: var(--bg3); }
+.picker:hover { border-color: var(--primary); }
+.picker.has-file { border-style: solid; border-color: var(--green); color: var(--text); }
+.picker .path { font-family: var(--mono); font-size: 0.75rem; margin-top: 6px; word-break: break-all; color: var(--text2); }
+.progress-bar-container { width: 100%; height: 8px; background: var(--bg3); border-radius: 4px; overflow: hidden; border: 1px solid var(--border); margin-top: 12px; }
+.progress-bar { height: 100%; background: linear-gradient(90deg, var(--primary), var(--purple)); transition: width .3s; }
 
-    /* Channel list */
-    .channel-list { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
-    .channel-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 8px; border-radius: 8px; cursor: pointer;
-      transition: all .2s; margin-bottom: 2px; border: 1px solid transparent;
-    }
-    .channel-item:hover { background: var(--surface3); }
-    .channel-item.active { background: var(--accent-glow); border-color: var(--accent); }
-    .channel-thumb {
-      width: 36px; height: 36px; border-radius: 50%;
-      object-fit: cover; flex-shrink: 0;
-      background: var(--surface3);
-    }
-    .channel-info h3 { font-size: 12px; font-weight: 600; line-height: 1.3; }
-    .channel-info p { font-size: 10px; color: var(--text2); margin-top: 1px; }
+/* ── Queue popover ──────────────────────────────────────────────────── */
+.queue-pop { position: absolute; right: 20px; top: 56px; width: 380px; max-height: 60vh; overflow: auto; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 8px 32px rgba(0,0,0,0.35); z-index: 20; display: none; }
+.queue-pop.open { display: block; }
+.qitem { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border-subtle); font-size: 0.82rem; }
+.qitem:last-child { border-bottom: none; }
+.qitem .qt { flex: 1; min-width: 0; }
+.qitem .qt .t1 { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qitem .qt .t2 { font-family: var(--mono); font-size: 0.72rem; color: var(--text-muted); }
+.qbar { height: 4px; background: var(--bg-hover); border-radius: 2px; overflow: hidden; margin-top: 4px; }
+.qbar > div { height: 100%; background: var(--primary); }
 
-    /* Upload queue mini */
-    .queue-mini {
-      border-top: 1px solid var(--border);
-      padding: 12px 14px;
-    }
-    .queue-item-mini {
-      display: flex; align-items: center; gap: 8px;
-      padding: 6px 0; font-size: 11px;
-    }
-    .queue-item-mini .q-title { flex: 1; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .q-pct { font-size: 10px; color: var(--accent); font-weight: 600; flex-shrink: 0; }
-    .q-progress {
-      height: 3px; background: var(--surface3); border-radius: 2px;
-      overflow: hidden; margin-top: 2px;
-    }
-    .q-progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .5s; }
-
-    /* ── Main area ── */
-    .main { display: flex; flex-direction: column; overflow: hidden; }
-
-    /* Toolbar */
-    .toolbar {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 16px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .toolbar-title { font-size: 14px; font-weight: 600; flex: 1; }
-    .toolbar-title span { color: var(--text2); font-weight: 400; font-size: 12px; margin-left: 6px; }
-
-    .btn {
-      display: flex; align-items: center; gap: 6px;
-      padding: 7px 14px; border-radius: 7px; border: none; cursor: pointer;
-      font-size: 12px; font-weight: 500; font-family: inherit;
-      transition: all .2s; white-space: nowrap;
-    }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { background: var(--accent2); transform: translateY(-1px); }
-    .btn-secondary { background: var(--surface3); color: var(--text2); border: 1px solid var(--border2); }
-    .btn-secondary:hover { color: var(--text); background: var(--border2); }
-    .btn-danger { background: rgba(239,68,68,.12); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
-    .btn-danger:hover { background: rgba(239,68,68,.2); }
-
-    .search-input {
-      background: var(--surface2); border: 1px solid var(--border2);
-      color: var(--text); border-radius: 7px; padding: 7px 12px;
-      font-size: 12px; outline: none; font-family: inherit; width: 220px;
-      transition: border-color .2s;
-    }
-    .search-input:focus { border-color: var(--accent); }
-    .search-input::placeholder { color: var(--text3); }
-
-    /* Video grid */
-    .video-grid {
-      flex: 1; overflow-y: auto;
-      padding: 16px; display: none;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px; align-content: start;
-      min-height: 0; /* Force grid container to shrink and scroll internally */
-    }
-    .video-grid.active { display: grid; }
-    
-    /* Support portrait layout for TikTok */
-    .video-grid.provider-tiktok {
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-      gap: 16px;
-    }
-
-    .video-card {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      overflow: hidden; cursor: pointer;
-      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-      position: relative;
-      display: flex; flex-direction: column;
-    }
-    .video-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-4px);
-      box-shadow: 0 12px 30px rgba(59,130,246,.16);
-    }
-    .video-card.selected { border-color: var(--accent); background: var(--accent-glow); }
-
-    .video-thumb-container {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 16/9;
-      overflow: hidden;
-      background: var(--surface3);
-      flex-shrink: 0;
-    }
-    .video-grid.provider-tiktok .video-thumb-container {
-      aspect-ratio: 9/16;
-    }
-
-    .video-thumb {
-      width: 100%; height: 100%; object-fit: cover;
-      display: block; transition: transform 0.3s ease;
-    }
-    .video-card:hover .video-thumb {
-      transform: scale(1.04);
-    }
-    .video-thumb-placeholder {
-      width: 100%; height: 100%;
-      background: linear-gradient(135deg, var(--surface3), var(--surface2));
-      display: flex; align-items: center; justify-content: center;
-      font-size: 32px; color: var(--text3);
-    }
-    .video-duration {
-      position: absolute; bottom: 8px; right: 8px;
-      background: rgba(0,0,0,.75); color: #fff;
-      font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
-      backdrop-filter: blur(2px);
-    }
-    .video-status-badge {
-      position: absolute; top: 8px; left: 8px;
-      font-size: 9px; font-weight: 600; padding: 2px 6px; border-radius: 4px;
-      text-transform: uppercase; letter-spacing: .04em;
-      backdrop-filter: blur(2px);
-      box-shadow: 0 2px 4px rgba(0,0,0,0.25);
-    }
-    .badge-public { background: rgba(34,197,94,.85); color: #fff; }
-    .badge-private { background: rgba(239,68,68,.85); color: #fff; }
-    .badge-unlisted { background: rgba(234,179,8,.85); color: #fff; }
-
-    .video-body { padding: 12px 14px 8px; display: flex; flex-direction: column; flex-grow: 1; }
-    .video-title { font-size: 13px; font-weight: 600; line-height: 1.4; margin-bottom: 6px;
-      color: var(--text);
-      overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; 
-      height: 36px; flex-shrink: 0; }
-    .video-meta { display: flex; gap: 10px; font-size: 11px; color: var(--text2); flex-wrap: wrap; margin-bottom: 6px; flex-shrink: 0; }
-    .video-meta span { display: flex; align-items: center; gap: 4px; }
-    .video-actions {
-      display: flex; gap: 6px; padding: 6px 14px 14px; flex-shrink: 0; margin-top: auto;
-    }
-    .video-action-btn {
-      flex: 1; padding: 6px; border-radius: 6px; border: 1px solid transparent; cursor: pointer;
-      font-size: 11px; font-family: inherit; transition: all .2s; font-weight: 600;
-      display: flex; align-items: center; justify-content: center; gap: 4px;
-    }
-    .vab-edit { background: rgba(59,130,246,.12); color: var(--accent); border-color: rgba(59,130,246,.2); }
-    .vab-edit:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .vab-delete { background: rgba(239,68,68,.1); color: var(--red); border-color: rgba(239,68,68,.2); }
-    .vab-delete:hover { background: var(--red); color: #fff; border-color: var(--red); }
-    .vab-link { background: rgba(168,85,247,.1); color: var(--purple); border-color: rgba(168,85,247,.2); }
-    .vab-link:hover { background: var(--purple); color: #fff; border-color: var(--purple); }
-
-    /* Pagination */
-    .pagination {
-      display: flex; justify-content: center; align-items: center; gap: 12px;
-      padding: 12px; border-top: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .page-btn {
-      padding: 6px 16px; border-radius: 6px; border: 1px solid var(--border2);
-      background: var(--surface2); color: var(--text2); cursor: pointer;
-      font-size: 11px; font-family: inherit; transition: all .2s;
-    }
-    .page-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-    .page-btn:disabled { opacity: .35; cursor: not-allowed; }
-    .page-info { font-size: 11px; color: var(--text2); }
-
-    /* Empty state */
-    .empty-state {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center; gap: 12px;
-      color: var(--text2); text-align: center; padding: 40px;
-    }
-    .empty-icon { font-size: 48px; opacity: .4; }
-    .empty-title { font-size: 16px; font-weight: 600; color: var(--text); }
-    .empty-sub { font-size: 13px; max-width: 320px; line-height: 1.6; }
-
-    /* ── Upload Modal ── */
-    .modal-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,.7);
-      display: none; align-items: center; justify-content: center;
-      z-index: 1000; backdrop-filter: blur(4px);
-    }
-    .modal-overlay.open { display: flex; }
-    .modal {
-      background: var(--surface); border: 1px solid var(--border2);
-      border-radius: 14px; width: 90%; max-width: 620px; max-height: 90vh;
-      overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,.5);
-      animation: modal-in .2s ease;
-    }
-    @keyframes modal-in { from { opacity:0; transform:scale(.95) } to { opacity:1; transform:scale(1) } }
-
-    .modal-header {
-      display: flex; align-items: center; padding: 18px 20px 14px;
-      border-bottom: 1px solid var(--border);
-    }
-    .modal-header h2 { font-size: 15px; font-weight: 600; flex: 1; }
-    .modal-close {
-      background: none; border: none; color: var(--text2); cursor: pointer;
-      font-size: 18px; padding: 4px; border-radius: 4px; transition: color .2s;
-    }
-    .modal-close:hover { color: var(--text); }
-    .modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
-    .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
-
-    /* Form fields */
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .form-group { display: flex; flex-direction: column; gap: 5px; }
-    .form-group label { font-size: 11px; font-weight: 500; color: var(--text2); }
-    .form-input, .form-select, .form-textarea {
-      background: var(--surface2); border: 1px solid var(--border2);
-      color: var(--text); border-radius: 7px; padding: 8px 10px;
-      font-size: 12px; outline: none; font-family: inherit;
-      transition: border-color .2s;
-    }
-    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
-    .form-select option { background: var(--surface2); }
-    .form-textarea { resize: vertical; min-height: 80px; }
-    .form-hint { font-size: 10px; color: var(--text3); }
-
-    /* File picker area */
-    .file-picker {
-      background: var(--surface2); border: 2px dashed var(--border2);
-      border-radius: 8px; padding: 20px; text-align: center;
-      cursor: pointer; transition: all .2s;
-    }
-    .file-picker:hover { border-color: var(--accent); background: var(--accent-glow); }
-    .file-picker.has-file { border-color: var(--green); border-style: solid; }
-    .file-picker-icon { font-size: 28px; margin-bottom: 8px; }
-    .file-picker-text { font-size: 12px; color: var(--text2); }
-    .file-picker-path { font-size: 11px; color: var(--green); margin-top: 4px; font-family: monospace; }
-
-    /* Thumbnail picker */
-    .thumb-picker {
-      display: flex; gap: 10px; align-items: flex-start;
-    }
-    .thumb-preview {
-      width: 120px; height: 68px; border-radius: 6px; object-fit: cover;
-      background: var(--surface3); border: 1px solid var(--border2);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 20px; color: var(--text3); flex-shrink: 0;
-      overflow: hidden;
-    }
-    .thumb-preview img { width: 100%; height: 100%; object-fit: cover; }
-    .thumb-picker .form-group { flex: 1; }
-
-    /* Upload progress bar */
-    .upload-progress-bar {
-      height: 6px; background: var(--surface3); border-radius: 3px; overflow: hidden;
-      margin-top: 6px; display: none;
-    }
-    .upload-progress-bar.visible { display: block; }
-    .upload-progress-fill {
-      height: 100%; border-radius: 3px;
-      background: linear-gradient(90deg, var(--accent), var(--purple));
-      transition: width .4s ease; animation: shimmer 2s infinite;
-    }
-    @keyframes shimmer {
-      0% { filter: brightness(1); }
-      50% { filter: brightness(1.3); }
-      100% { filter: brightness(1); }
-    }
-    .upload-status-text { font-size: 11px; color: var(--text2); margin-top: 4px; text-align: center; }
-
-    /* Edit modal (reuse) */
-    /* ── Toast ── */
-    .toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; }
-    .toast {
-      background: var(--surface2); border: 1px solid var(--border2);
-      color: var(--text); border-radius: 8px; padding: 10px 14px;
-      font-size: 12px; box-shadow: 0 4px 16px rgba(0,0,0,.4);
-      animation: toast-in .2s ease; display: flex; align-items: center; gap: 8px;
-      max-width: 320px;
-    }
-    .toast.success { border-color: rgba(34,197,94,.4); }
-    .toast.error { border-color: rgba(239,68,68,.4); }
-    @keyframes toast-in { from { opacity:0; transform:translateX(20px) } to { opacity:1; transform:translateX(0) } }
-
-    /* Scrollbar */
-    ::-webkit-scrollbar { width: 5px; height: 5px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
-
-    /* Loading spinner */
-    .spinner {
-      width: 18px; height: 18px; border: 2px solid var(--border2);
-      border-top-color: var(--accent); border-radius: 50%;
-      animation: spin .7s linear infinite; flex-shrink: 0;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Confirm dialog */
-    .confirm-dialog {
-      position: fixed; inset: 0; background: rgba(0,0,0,.7);
-      display: none; align-items: center; justify-content: center;
-      z-index: 2000;
-    }
-    .confirm-dialog.open { display: flex; }
-    .confirm-box {
-      background: var(--surface); border: 1px solid var(--border2);
-      border-radius: 12px; padding: 24px; max-width: 380px; width: 90%;
-      text-align: center; box-shadow: 0 16px 48px rgba(0,0,0,.5);
-    }
-    .confirm-icon { font-size: 36px; margin-bottom: 12px; }
-    .confirm-title { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
-    .confirm-sub { font-size: 12px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
-    .confirm-btns { display: flex; gap: 8px; justify-content: center; }
-  </style>
+/* ── Toast ──────────────────────────────────────────────────────────── */
+.toasts { position: fixed; bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+.toast { background: var(--bg3); border: 1px solid var(--border); border-left: 3px solid var(--green); border-radius: 8px; padding: 10px 14px; font-size: 0.85rem; box-shadow: 0 1px 3px rgba(0,0,0,0.3); max-width: 380px; display: flex; gap: 8px; align-items: flex-start; }
+.toast.error { border-left-color: var(--red); }
+.toast button { margin-left: auto; }
+.hidden { display: none !important; }
+</style>
 </head>
 <body>
+<div id="app">
 
-<!-- ── Header ── -->
-<div class="header">
-  <span class="header-icon">📹</span>
-  <h1>Video Manager</h1>
-  <div class="provider-tabs">
-    <div class="provider-tab active" data-provider="youtube" onclick="switchProvider('youtube')">📺 YouTube</div>
-    <div class="provider-tab" data-provider="facebook" onclick="switchProvider('facebook')">📘 Facebook</div>
-    <div class="provider-tab" data-provider="tiktok" onclick="switchProvider('tiktok')">🎵 TikTok</div>
+  <!-- Hàng A — thanh ngữ cảnh -->
+  <div class="context-bar">
+    <div class="tabs" role="tablist" aria-label="Nền tảng" id="providerTabs"></div>
+    <select id="accountSelect" aria-label="Tài khoản" onchange="onAccountChange()"><option value="">Đang tải tài khoản…</option></select>
+    <select id="channelSelect" aria-label="Kênh" onchange="onChannelChange()" class="hidden"><option value="">Chọn kênh</option></select>
+    <span class="write-as" id="writeAs"></span>
+    <div style="margin-left:auto; display:flex; gap:10px; align-items:center;">
+      <button class="btn-secondary" id="btnQueue" onclick="toggleQueue()"><span class="material-symbols-outlined">cloud_upload</span>Hàng đợi <span class="count" id="queueCount">0</span></button>
+      <button class="btn-primary" id="btnUpload" onclick="openUploadModal()" disabled><span class="material-symbols-outlined">upload</span>Tải video lên</button>
+    </div>
+    <div class="queue-pop" id="queuePop"></div>
   </div>
-  <span class="header-sub" id="header-sub">Multi-platform video management</span>
+
+  <!-- Hàng B — thanh lọc -->
+  <div class="filter-bar" id="filterBar">
+    <div class="search"><span class="material-symbols-outlined" style="color:var(--text-muted)">search</span><input type="text" id="searchInput" placeholder="Tìm theo tiêu đề, mô tả, tag" oninput="render()"><span class="kbd">/</span></div>
+    <div class="tabs" id="statusChips" role="radiogroup" aria-label="Lọc theo trạng thái"></div>
+    <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+      <span style="font-size:.8rem; color:var(--text-muted); white-space:nowrap;" id="loadedInfo"></span>
+      <div class="view-toggle">
+        <button class="btn-icon on" id="viewTable" title="Bảng" onclick="setView('table')"><span class="material-symbols-outlined">table_rows</span></button>
+        <button class="btn-icon" id="viewGrid" title="Lưới" onclick="setView('grid')"><span class="material-symbols-outlined">grid_view</span></button>
+      </div>
+    </div>
+  </div>
+
+  <main id="main"></main>
 </div>
 
-<!-- ── Layout ── -->
-<div class="layout">
-
-  <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="sidebar-section">
-      <div class="sidebar-label">Tài khoản</div>
-      <select class="account-select" id="accountSelect" onchange="onAccountChange()">
-        <option value="">⏳ Đang tải tài khoản...</option>
-      </select>
-      <button class="refresh-btn" onclick="loadAccounts()">
-        <span id="refreshIcon">🔄</span> Làm mới
-      </button>
-    </div>
-
-    <div class="sidebar-section" style="padding-top:8px;">
-      <div class="sidebar-label">Kênh</div>
-    </div>
-    <div class="channel-list" id="channelList">
-      <div class="empty-state" style="padding:20px;">
-        <div class="empty-icon">📺</div>
-        <div style="font-size:11px;color:var(--text2);text-align:center">Chọn tài khoản để xem kênh</div>
+<!-- ── Upload ── -->
+<dialog id="uploadModal">
+  <div class="mhead"><h2>Tải video lên · <span id="uploadChannelName"></span></h2><button class="btn-close" onclick="closeUploadModal()" aria-label="Đóng">✕</button></div>
+  <div class="mbody">
+    <div class="form-group">
+      <label class="lbl">Tệp video</label>
+      <div class="picker" id="filePicker" onclick="pickFile()">
+        <div>Chọn tệp từ File Manager</div>
+        <div class="path" id="filePickerPath"></div>
       </div>
+      <div class="hint">MP4, MOV, AVI, MKV, WEBM — đường dẫn trên máy chủ. Hoặc dán vào ô dưới.</div>
+      <input type="text" id="uploadFilePath" placeholder="/home/ubuntu/videos/tap-01.mp4" oninput="updateFilePicker()" style="margin-top:8px;">
     </div>
-
-    <!-- Upload queue mini -->
-    <div class="queue-mini" id="uploadQueueMini" style="display:none;">
-      <div class="sidebar-label" style="margin-bottom:6px;">Upload Queue</div>
-      <div id="queueMiniItems"></div>
+    <div class="form-group"><label class="lbl">Tiêu đề</label><input type="text" id="uploadTitle" maxlength="100"><div class="hint" id="uploadTitleCount">0/100</div></div>
+    <div class="form-group"><label class="lbl">Mô tả</label><textarea id="uploadDescription"></textarea></div>
+    <div class="row2">
+      <div class="form-group"><label class="lbl">Quyền riêng tư</label>
+        <select id="uploadPrivacy"><option value="private">Riêng tư</option><option value="unlisted">Không công khai</option><option value="public">Công khai</option></select></div>
+      <div class="form-group"><label class="lbl">Danh mục</label><select id="uploadCategory"><option value="22">Con người &amp; Blog</option></select></div>
     </div>
-  </div>
-
-  <!-- Main -->
-  <div class="main" id="mainArea">
-
-    <!-- Toolbar -->
-    <div class="toolbar" id="toolbar">
-      <div class="toolbar-title" id="toolbarTitle">
-        Chọn kênh để xem video
-        <span id="toolbarCount"></span>
+    <div class="form-group"><label class="lbl">Tag (cách nhau bằng dấu phẩy)</label><input type="text" id="uploadTags"></div>
+    <div class="form-group"><label class="lbl">Thumbnail (tuỳ chọn)</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" id="uploadThumbnail" placeholder="Đường dẫn ảnh JPG/PNG, tối đa 2 MB" oninput="updateThumbPreview()">
+        <button class="btn-sm" type="button" onclick="pickThumb('uploadThumbnail')">Chọn ảnh</button>
       </div>
-      <input class="search-input" type="text" id="searchInput" placeholder="🔍 Tìm video..." oninput="filterVideos()" style="display:none">
-      <button class="btn btn-secondary" onclick="loadVideos()" id="btnRefreshVideos" style="display:none">🔄 Làm mới</button>
-      <button class="btn btn-primary" onclick="openUploadModal()" id="btnUpload" style="display:none">
-        ⬆️ Upload Video
-      </button>
+      <div id="thumbPreview" style="margin-top:8px; width:160px; height:90px; border-radius:6px; background:var(--bg-hover); overflow:hidden;" class="hidden"></div>
     </div>
-
-    <!-- Empty state (select channel) -->
-    <div class="empty-state" id="emptyState">
-      <div class="empty-icon">📹</div>
-      <div class="empty-title">Chọn kênh từ sidebar</div>
-      <div class="empty-sub" id="emptyStateSub">Kết nối tài khoản YouTube qua Auth Manager, chọn tài khoản ở trên và chọn kênh để quản lý video.</div>
-      <button class="btn btn-secondary" style="margin-top:8px;" onclick="window.location.href='/auth-manager'" id="btnAuth">
-        🔑 Cấp quyền YouTube
-      </button>
-    </div>
-
-    <!-- Video grid -->
-    <div class="video-grid" id="videoGrid"></div>
-
-    <!-- Pagination -->
-    <div class="pagination" id="pagination" style="display:none">
-      <button class="page-btn" id="btnPrev" onclick="loadPrevPage()" disabled>← Trước</button>
-      <span class="page-info" id="pageInfo">Trang 1</span>
-      <button class="page-btn" id="btnNext" onclick="loadNextPage()">Tiếp →</button>
+    <div id="uploadProgressArea" class="hidden">
+      <div class="progress-bar-container"><div class="progress-bar" id="uploadProgressFill" style="width:0%"></div></div>
+      <div class="hint" id="uploadStatusText"></div>
     </div>
   </div>
-</div>
+  <div class="mfoot">
+    <button class="btn-secondary" id="btnCancelUpload" onclick="closeUploadModal()">Đóng</button>
+    <button class="btn-primary" id="btnStartUpload" onclick="startUpload()">Xếp vào hàng đợi</button>
+  </div>
+</dialog>
 
-<!-- ── Upload Modal ── -->
-<div class="modal-overlay" id="uploadModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>⬆️ Upload Video mới</h2>
-      <button class="modal-close" onclick="closeUploadModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <!-- File picker (File Manager integration) -->
-      <div class="form-group">
-        <label>File Video *</label>
-        <div class="file-picker" id="filePicker" onclick="pickFile()">
-          <div class="file-picker-icon">📁</div>
-          <div class="file-picker-text">Nhấp để chọn file từ File Manager</div>
-          <div class="file-picker-path" id="filePickerPath" style="display:none"></div>
-        </div>
-        <span class="form-hint">Hỗ trợ: MP4, MOV, AVI, MKV, WEBM. Đường dẫn tuyệt đối trên server.</span>
+<!-- ── Edit ── -->
+<dialog id="editModal">
+  <div class="mhead"><h2>Chỉnh sửa video</h2><button class="btn-close" onclick="closeEditModal()" aria-label="Đóng">✕</button></div>
+  <div class="mbody">
+    <input type="hidden" id="editVideoId">
+    <div class="form-group"><label class="lbl">Tiêu đề</label><input type="text" id="editTitle" maxlength="100"><div class="hint" id="editTitleCount">0/100</div></div>
+    <div class="form-group"><label class="lbl">Mô tả</label><textarea id="editDescription"></textarea></div>
+    <div class="form-group"><label class="lbl">Tag (cách nhau bằng dấu phẩy)</label><input type="text" id="editTags"></div>
+    <div class="form-group"><label class="lbl">Quyền riêng tư</label>
+      <select id="editPrivacy"><option value="private">Riêng tư</option><option value="unlisted">Không công khai</option><option value="public">Công khai</option></select></div>
+    <div class="form-group"><label class="lbl">Đổi thumbnail (tuỳ chọn)</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input type="text" id="editThumbnailPath" placeholder="Đường dẫn ảnh JPG/PNG">
+        <button class="btn-sm" type="button" onclick="pickThumb('editThumbnailPath')">Chọn ảnh</button>
       </div>
-
-      <!-- Hoặc nhập thủ công -->
-      <div class="form-group">
-        <label>Hoặc nhập đường dẫn thủ công</label>
-        <input class="form-input" id="uploadFilePath" type="text" placeholder="/path/to/video.mp4" oninput="updateFilePicker()">
-      </div>
-
-      <div class="form-row">
-        <div class="form-group" style="grid-column:1/-1;">
-          <label>Tiêu đề *</label>
-          <input class="form-input" id="uploadTitle" type="text" placeholder="Tên video..." maxlength="100">
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Mô tả</label>
-        <textarea class="form-textarea" id="uploadDescription" placeholder="Mô tả video..." rows="3"></textarea>
-      </div>
-
-      <div class="form-row">
-        <div class="form-group">
-          <label>Quyền riêng tư</label>
-          <select class="form-select" id="uploadPrivacy">
-            <option value="private">🔒 Riêng tư (Private)</option>
-            <option value="unlisted">🔗 Không công khai (Unlisted)</option>
-            <option value="public">🌍 Công khai (Public)</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Danh mục</label>
-          <select class="form-select" id="uploadCategory">
-            <option value="22">People & Blogs</option>
-            <option value="24">Entertainment</option>
-            <option value="27">Education</option>
-            <option value="28">Science & Technology</option>
-            <option value="10">Music</option>
-            <option value="20">Gaming</option>
-            <option value="17">Sports</option>
-            <option value="25">News & Politics</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label>Tags (cách nhau bằng dấu phẩy)</label>
-        <input class="form-input" id="uploadTags" type="text" placeholder="tag1, tag2, tag3...">
-      </div>
-
-      <!-- Thumbnail -->
-      <div class="form-group">
-        <label>Thumbnail (tùy chọn)</label>
-        <div class="thumb-picker">
-          <div class="thumb-preview" id="thumbPreview">🖼️</div>
-          <div class="form-group" style="flex:1;">
-            <input class="form-input" id="uploadThumbnail" type="text" placeholder="/path/to/thumbnail.jpg" oninput="updateThumbPreview()">
-            <span class="form-hint" style="margin-top:4px;">Đường dẫn file ảnh thumbnail (JPG/PNG, max 2MB)</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Progress -->
-      <div id="uploadProgressArea" style="display:none;">
-        <div class="upload-progress-bar visible">
-          <div class="upload-progress-fill" id="uploadProgressFill" style="width:0%"></div>
-        </div>
-        <div class="upload-status-text" id="uploadStatusText">Đang chuẩn bị upload...</div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeUploadModal()" id="btnCancelUpload">Hủy</button>
-      <button class="btn btn-primary" onclick="startUpload()" id="btnStartUpload">
-        ⬆️ Bắt đầu Upload
-      </button>
     </div>
   </div>
-</div>
-
-<!-- ── Edit Modal ── -->
-<div class="modal-overlay" id="editModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h2>✏️ Chỉnh sửa Video</h2>
-      <button class="modal-close" onclick="closeEditModal()">✕</button>
-    </div>
-    <div class="modal-body">
-      <input type="hidden" id="editVideoId">
-      <div class="form-group">
-        <label>Tiêu đề</label>
-        <input class="form-input" id="editTitle" type="text" maxlength="100">
-      </div>
-      <div class="form-group">
-        <label>Mô tả</label>
-        <textarea class="form-textarea" id="editDescription" rows="4"></textarea>
-      </div>
-      <div class="form-group">
-        <label>Tags (cách nhau bằng dấu phẩy)</label>
-        <input class="form-input" id="editTags" type="text">
-      </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Quyền riêng tư</label>
-          <select class="form-select" id="editPrivacy">
-            <option value="private">🔒 Riêng tư</option>
-            <option value="unlisted">🔗 Không công khai</option>
-            <option value="public">🌍 Công khai</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>Thumbnail path (tùy chọn)</label>
-          <input class="form-input" id="editThumbnailPath" type="text" placeholder="/path/to/thumb.jpg">
-        </div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeEditModal()">Hủy</button>
-      <button class="btn btn-primary" onclick="saveEdit()">💾 Lưu thay đổi</button>
-    </div>
+  <div class="mfoot">
+    <button class="btn-secondary" onclick="closeEditModal()">Hủy</button>
+    <button class="btn-primary" id="btnSaveEdit" onclick="saveEdit()">Lưu thay đổi</button>
   </div>
-</div>
+</dialog>
 
-<!-- ── Confirm Dialog ── -->
-<div class="confirm-dialog" id="confirmDialog">
-  <div class="confirm-box">
-    <div class="confirm-icon" id="confirmIcon">⚠️</div>
-    <div class="confirm-title" id="confirmTitle">Xác nhận</div>
-    <div class="confirm-sub" id="confirmSub"></div>
-    <div class="confirm-btns">
-      <button class="btn btn-secondary" onclick="closeConfirm()">Hủy</button>
-      <button class="btn btn-danger" id="confirmOkBtn">Xác nhận</button>
-    </div>
+<!-- ── Confirm ── -->
+<dialog id="confirmDialog" style="width:420px;">
+  <div class="mbody" style="text-align:center; padding:28px 24px 8px;">
+    <span class="material-symbols-outlined" style="font-size:40px; color:var(--red);">delete</span>
+    <h2 style="font-size:1.05rem; margin:10px 0 6px;" id="confirmTitle">Xóa video?</h2>
+    <p style="font-size:.88rem; color:var(--text2);" id="confirmSub"></p>
   </div>
-</div>
+  <div class="mfoot" style="justify-content:center;">
+    <button class="btn-secondary" onclick="closeConfirm()">Hủy</button>
+    <button class="btn-danger" id="confirmOkBtn" style="padding:10px 20px; font-size:.9rem;">Xóa vĩnh viễn</button>
+  </div>
+</dialog>
 
-<!-- ── Toast ── -->
-<div class="toast-container" id="toastContainer"></div>
+<div class="toasts" id="toasts"></div>
 
 <script>
 const API = (path) => `/api/v1/video_manager${path}`;
-let currentProvider = 'youtube';
-let currentEmail = '';
-let currentTokenId = '';  // token_id from Auth Manager
-let currentChannel = null;
-let allVideos = [];
-let pageTokenStack = [''];  // stack of page tokens, index = page number
-let currentPage = 0;
-let uploadEventSource = null;
-let queuePollingInterval = null;
+const PROVIDER_NAMES = { youtube: 'YouTube', facebook: 'Facebook', tiktok: 'TikTok' };
+const PAGE_SIZE = 50;
 
-// ─── Provider ─────────────────────────────────────────────────────
+// ── State: one source of truth ──────────────────────────────────────────
+const S = {
+  provider: 'youtube', providers: [],
+  email: '', tokenId: '', accounts: [],
+  channel: null, channels: [],
+  videos: [], nextToken: '', total: null, loading: false, loadingMore: false, error: '',
+  status: 'all', sortKey: 'published_at', sortDir: 'desc',
+  view: localStorage.getItem('vm_view') || 'table',
+  tasks: [], queueTimer: null, uploadTaskId: null, uploadES: null,
+};
+const $ = (id) => document.getElementById(id);
+
+// ── Auth query: exactly what the server's _get_token expects ─────────────
+function authParam() {
+  return S.tokenId ? `token_id=${encodeURIComponent(S.tokenId)}` : `email=${encodeURIComponent(S.email)}`;
+}
+async function apiJson(url, opts) {
+  const res = await fetch(url, opts);
+  let data = null;
+  try { data = await res.json(); } catch (e) {}
+  if (!res.ok) {
+    const detail = data && (typeof data.detail === 'string' ? data.detail : (data.detail && data.detail.message) || data.message);
+    const err = new Error(detail || `HTTP ${res.status}`); err.status = res.status; throw err;
+  }
+  return data || {};
+}
+
+// ── Providers ───────────────────────────────────────────────────────────
+async function loadProviders() {
+  try {
+    const d = await apiJson(API('/providers'));
+    S.providers = d.providers || [];
+  } catch (e) { S.providers = []; }
+  const known = ['youtube', 'facebook', 'tiktok'];
+  const registered = new Set(S.providers.map(p => p.id || p.provider_id || p.name));
+  $('providerTabs').innerHTML = known.map(id => {
+    const ok = registered.size === 0 || registered.has(id);
+    return `<button class="chip ${id === S.provider ? 'active' : ''}" role="tab" aria-selected="${id === S.provider}" data-provider="${id}"
+      ${ok ? '' : 'disabled title="Nền tảng này chưa được cài trên máy chủ"'} onclick="switchProvider('${id}')">${PROVIDER_NAMES[id]}</button>`;
+  }).join('');
+}
+
 function switchProvider(id) {
-  currentProvider = id;
-  document.querySelectorAll('.provider-tab').forEach(t => t.classList.toggle('active', t.dataset.provider === id));
-  
-  const providerName = id === 'youtube' ? 'YouTube' : id === 'facebook' ? 'Facebook' : 'TikTok';
-  document.getElementById('emptyStateSub').textContent = `Kết nối tài khoản ${providerName} qua Auth Manager, chọn tài khoản ở trên và chọn kênh để quản lý video.`;
-  document.getElementById('btnAuth').innerHTML = `🔑 Cấp quyền ${providerName}`;
-  
+  if (id === S.provider) return;
+  S.provider = id;
+  // A FULL reset. The previous version only recoloured the tab and left the
+  // old platform's videos on screen — with edit/delete buttons that then hit
+  // the wrong provider's API.
+  resetToAccount();
+  loadProviders();
   loadAccounts();
 }
 
-// ─── Accounts ─────────────────────────────────────────────────────
+function resetToAccount() {
+  S.channel = null; S.channels = []; S.videos = []; S.nextToken = ''; S.total = null; S.error = '';
+  S.status = 'all';
+  $('channelSelect').classList.add('hidden');
+  $('btnUpload').disabled = true;
+  render();
+}
+
+// ── Accounts ────────────────────────────────────────────────────────────
 async function loadAccounts() {
-  const sel = document.getElementById('accountSelect');
-  const refreshIcon = document.getElementById('refreshIcon');
-  refreshIcon.style.animation = 'spin .7s linear infinite';
-  sel.innerHTML = '<option value="">⏳ Đang tải...</option>';
-
+  const sel = $('accountSelect');
+  sel.innerHTML = '<option value="">Đang tải tài khoản…</option>';
   try {
-    // Call Auth Manager tokens API directly
-    const authApiProvider = currentProvider === 'youtube' ? 'google' : currentProvider;
-    const res = await fetch(`/api/v1/auth-manager/tokens?provider=${authApiProvider}`);
-    const data = await res.json();
-    const tokens = (data.tokens || []).filter(t => {
-      const scopes = t.scopes || [];
-      if (currentProvider === 'youtube') return scopes.some(s => s.includes('youtube'));
-      if (currentProvider === 'facebook') return true;
-      if (currentProvider === 'tiktok') return true; // TikTok tokens are provider-filtered already
-      return true;
-    });
-
-    if (!tokens.length) {
-      sel.innerHTML = '<option value="">Chưa có tài khoản được cấp quyền</option>';
-      document.getElementById('channelList').innerHTML =
-        `<div class="empty-state" style="padding:20px;"><div class="empty-icon">🔑</div>
-        <div style="font-size:11px;color:var(--text2);text-align:center;">Chưa cấp quyền ${currentProvider}.<br>Vào <a href="/auth-manager" style="color:var(--accent)">Auth Manager</a> để thêm tài khoản.</div></div>`;
-      return;
-    }
-
-    // Deduplicate by email
-    const seen = new Set();
-    const accounts = [];
-    for (const t of tokens) {
-      const email = t.authorized_email || '';
-      if (email && !seen.has(email)) {
-        seen.add(email);
-        accounts.push({
-          email,
-          token_id: t.token_id,
-          credential_id: t.credential_id,
-          status: t.status || 'active',
-          scopes: t.scopes || [],
-        });
-      }
-    }
-
-    sel.innerHTML = accounts.map(a =>
-      `<option value="${a.email}" data-token="${a.token_id}" data-cred="${a.credential_id}">
-        ${a.email} ${a.status === 'active' ? '✅' : '⚠️ (cần refresh)'}
-      </option>`
-    ).join('');
-
-    if (accounts.length) {
-      currentEmail = accounts[0].email;
-      currentTokenId = accounts[0].token_id;
-      loadChannels();
-    }
+    const d = await apiJson(API(`/accounts?provider=${S.provider}`));
+    S.accounts = d.accounts || [];
   } catch (e) {
-    sel.innerHTML = '<option value="">❌ Lỗi tải tài khoản</option>';
-    toast('error', '❌ Không thể tải tài khoản: ' + e.message);
+    S.accounts = [];
+    sel.innerHTML = '<option value="">Không tải được tài khoản</option>';
+    S.error = 'Không tải được danh sách tài khoản: ' + e.message; render(); return;
   }
-  refreshIcon.style.animation = '';
+  if (!S.accounts.length) {
+    sel.innerHTML = '<option value="">Chưa có tài khoản được cấp quyền</option>';
+    S.email = ''; S.tokenId = ''; resetToAccount(); return;
+  }
+  sel.innerHTML = S.accounts.map(a => {
+    const email = a.email || a.authorized_email || '';
+    const label = email || `Tài khoản không có email (…${String(a.token_id || '').slice(-4)})`;
+    return `<option value="${escAttr(a.token_id || '')}" data-email="${escAttr(email)}">${escHtml(label)}${a.status && a.status !== 'active' ? ' — cần cấp quyền lại' : ''}</option>`;
+  }).join('');
+  onAccountChange();
 }
 
 function onAccountChange() {
-  const sel = document.getElementById('accountSelect');
+  const sel = $('accountSelect');
   const opt = sel.options[sel.selectedIndex];
-  currentEmail = sel.value;
-  currentTokenId = opt ? (opt.getAttribute('data-token') || '') : '';
-  currentChannel = null;
-  allVideos = [];
-  pageTokenStack = [''];
-  currentPage = 0;
-  document.getElementById('videoGrid').classList.remove('active');
-  document.getElementById('emptyState').style.display = 'flex';
-  document.getElementById('pagination').style.display = 'none';
-  document.getElementById('searchInput').style.display = 'none';
-  document.getElementById('btnRefreshVideos').style.display = 'none';
-  document.getElementById('btnUpload').style.display = 'none';
-  document.getElementById('toolbarTitle').innerHTML = 'Chọn kênh để xem video <span id="toolbarCount"></span>';
-  console.log('[onAccountChange] email:', currentEmail, 'token_id:', currentTokenId);
-  if (currentEmail) loadChannels();
-  else document.getElementById('channelList').innerHTML =
-    `<div class="empty-state" style="padding:20px;"><div class="empty-icon">📺</div>
-    <div style="font-size:11px;color:var(--text2)">Chọn tài khoản</div></div>`;
+  S.tokenId = sel.value || '';
+  S.email = opt ? (opt.getAttribute('data-email') || '') : '';
+  $('writeAs').textContent = S.email ? `Đăng bằng tài khoản: ${S.email}` : '';
+  resetToAccount();
+  if (S.tokenId || S.email) loadChannels();
 }
 
-// ─── Channels ─────────────────────────────────────────────────────
+// ── Channels ────────────────────────────────────────────────────────────
 async function loadChannels() {
-  const list = document.getElementById('channelList');
-  list.innerHTML = '<div style="display:flex;justify-content:center;padding:20px;"><div class="spinner"></div></div>';
-
+  const sel = $('channelSelect');
+  sel.classList.remove('hidden');
+  sel.innerHTML = '<option value="">Đang tải kênh…</option>';
   try {
-    const authParam = currentTokenId
-      ? `token_id=${encodeURIComponent(currentTokenId)}`
-      : `email=${encodeURIComponent(currentEmail)}`;
-    const res = await fetch(API(`/channels?provider=${currentProvider}&${authParam}`));
-    const data = await res.json();
-
-    // Show error detail from API if HTTP failed
-    if (!res.ok) {
-      const errMsg = data.detail || `HTTP ${res.status}`;
-      list.innerHTML = `<div class="empty-state" style="padding:16px;"><div class="empty-icon" style="font-size:28px;">❌</div>
-        <div style="font-size:11px;color:var(--red);text-align:center;">${errMsg}</div>
-        <button class="btn btn-secondary" style="margin-top:10px;font-size:11px;" onclick="window.location.href='/auth-manager'">🔑 Cấp quyền lại</button>
-        </div>`;
-      return;
-    }
-
-    const channels = data.channels || [];
-
-    if (!channels.length) {
-      list.innerHTML = `<div class="empty-state" style="padding:20px;">
-        <div class="empty-icon">📺</div>
-        <div style="font-size:11px;color:var(--text2);text-align:center;">Không tìm thấy kênh nào</div></div>`;
-      return;
-    }
-
-    list.innerHTML = channels.map(ch => `
-      <div class="channel-item" data-id="${ch.id}" onclick="selectChannel(${JSON.stringify(ch).replace(/"/g,'&quot;')})">
-        ${ch.thumbnail_url
-          ? `<img class="channel-thumb" src="${ch.thumbnail_url}" alt="${ch.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="channel-thumb" style="display:none;align-items:center;justify-content:center;font-size:16px;">📺</div>`
-          : `<div class="channel-thumb" style="display:flex;align-items:center;justify-content:center;font-size:16px;">📺</div>`}
-        <div class="channel-info">
-          <h3>${escHtml(ch.title)}</h3>
-          <p>${formatNumber(ch.subscribers)} subs • ${formatNumber(ch.video_count)} videos</p>
-        </div>
-      </div>
-    `).join('');
-  } catch(e) {
-    list.innerHTML = `<div class="empty-state" style="padding:16px;"><div style="font-size:11px;color:var(--red)">❌ ${e.message}</div></div>`;
+    const d = await apiJson(API(`/channels?provider=${S.provider}&${authParam()}`));
+    S.channels = d.channels || [];
+  } catch (e) {
+    S.channels = [];
+    sel.innerHTML = '<option value="">Không tải được kênh</option>';
+    S.error = (e.status === 401 ? 'Tài khoản này chưa được cấp quyền hoặc token đã hết hạn. ' : 'Không tải được kênh: ') + e.message;
+    render(); return;
   }
+  if (!S.channels.length) {
+    sel.innerHTML = '<option value="">Không tìm thấy kênh nào</option>';
+    render(); return;
+  }
+  sel.innerHTML = '<option value="">Chọn kênh</option>' + S.channels.map(c =>
+    `<option value="${escAttr(c.id)}">${escHtml(c.title)} — ${formatNumber(c.video_count)} video · ${formatNumber(c.subscribers)} người đăng ký</option>`).join('');
+  // One channel (TikTok always has exactly one): pick it, no extra click.
+  if (S.channels.length === 1) { sel.value = S.channels[0].id; onChannelChange(); }
+  else render();
 }
 
-function selectChannel(ch) {
-  currentChannel = ch;
-  currentPage = 0;
-  pageTokenStack = [''];
-  document.querySelectorAll('.channel-item').forEach(el =>
-    el.classList.toggle('active', el.dataset.id === ch.id));
-  // Keep id="toolbarCount" on the span so loadVideos can update it
-  document.getElementById('toolbarTitle').innerHTML =
-    `${escHtml(ch.title)} <span id="toolbarCount">${formatNumber(ch.video_count)} videos</span>`;
-  document.getElementById('searchInput').style.display = 'block';
-  document.getElementById('btnRefreshVideos').style.display = 'flex';
-  document.getElementById('btnUpload').style.display = 'flex';
-  loadVideos();
+function onChannelChange() {
+  const id = $('channelSelect').value;
+  S.channel = S.channels.find(c => c.id === id) || null;
+  S.videos = []; S.nextToken = ''; S.total = null; S.error = ''; S.status = 'all';
+  $('btnUpload').disabled = !S.channel;
+  if (S.channel) loadVideos();
+  else render();
 }
 
-async function loadVideos(pageToken = '') {
-  if (!currentChannel) return;
-  const grid = document.getElementById('videoGrid');
-  const emptyState = document.getElementById('emptyState');
-  if (!pageToken) {
-    grid.innerHTML = '<div style="grid-column:1/-1;display:flex;justify-content:center;padding:40px;"><div class="spinner"></div></div>';
-  } else {
-    grid.insertAdjacentHTML('beforeend', '<div style="grid-column:1/-1;display:flex;justify-content:center;padding:20px;"><div class="spinner"></div></div>');
-  }
-  grid.className = `video-grid active provider-${currentProvider}`;
-  emptyState.style.display = 'none';
-
+// ── Videos ──────────────────────────────────────────────────────────────
+async function loadVideos(more = false) {
+  if (!S.channel) return;
+  if (more) S.loadingMore = true; else { S.loading = true; S.videos = []; S.nextToken = ''; }
+  render();
   try {
-    // Pass token_id if available (preferred), fallback to email
-    const authParam = currentTokenId
-      ? `token_id=${encodeURIComponent(currentTokenId)}`
-      : `email=${encodeURIComponent(currentEmail)}`;
-
-    // For YouTube: pass uploads_playlist_id to save quota (1 unit vs 100 units)
-    const uploadsPlaylistId = (currentProvider === 'youtube' && currentChannel.extra && currentChannel.extra.uploads_playlist)
-      ? `&uploads_playlist_id=${encodeURIComponent(currentChannel.extra.uploads_playlist)}`
-      : '';
-
-    const url = API(`/videos?provider=${currentProvider}&${authParam}&channel_id=${currentChannel.id}&max_results=20${pageToken ? '&page_token=' + pageToken : ''}${uploadsPlaylistId}`);
-    const res = await fetch(url);
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.detail || `HTTP ${res.status}`);
-    }
-
-    if (pageToken) {
-      allVideos = [...allVideos, ...(data.videos || [])];
-    } else {
-      allVideos = data.videos || [];
-    }
-
-    // Update next token
-    const nextToken = data.next_page_token || '';
-    if (pageTokenStack.length <= currentPage + 1) pageTokenStack.push(nextToken);
-    else pageTokenStack[currentPage + 1] = nextToken;
-
-    renderVideos(data.videos || [], !!pageToken);
-    updatePagination(data.total || allVideos.length, nextToken);
-    const countEl = document.getElementById('toolbarCount');
-    if (countEl) countEl.textContent = data.total ? `(${formatNumber(data.total)} tổng)` : `(${allVideos.length} videos)`;
-  } catch(e) {
-    if (!pageToken) grid.innerHTML = `<div style="grid-column:1/-1;color:var(--red);padding:20px;text-align:center;">❌ ${e.message}</div>`;
-    else toast('error', `Lỗi tải thêm video: ${e.message}`);
+    const playlist = (S.provider === 'youtube' && S.channel.extra && S.channel.extra.uploads_playlist)
+      ? `&uploads_playlist_id=${encodeURIComponent(S.channel.extra.uploads_playlist)}` : '';
+    const page = more && S.nextToken ? `&page_token=${encodeURIComponent(S.nextToken)}` : '';
+    const d = await apiJson(API(`/videos?provider=${S.provider}&${authParam()}&channel_id=${encodeURIComponent(S.channel.id)}&max_results=${PAGE_SIZE}${page}${playlist}`));
+    const batch = d.videos || [];
+    S.videos = more ? S.videos.concat(batch) : batch;
+    S.nextToken = d.next_page_token || '';
+    S.total = (typeof d.total === 'number' && S.provider === 'youtube') ? d.total : null;
+    S.error = '';
+  } catch (e) {
+    S.error = 'Không tải được video: ' + e.message;
   }
+  S.loading = false; S.loadingMore = false;
+  render();
 }
 
-function renderVideos(videos, append = false) {
-  const grid = document.getElementById('videoGrid');
-  const filter = document.getElementById('searchInput').value.toLowerCase();
-  const filtered = filter ? videos.filter(v => v.title.toLowerCase().includes(filter) || (v.description||'').toLowerCase().includes(filter)) : videos;
+async function loadAllRemaining() {
+  let guard = 0;
+  while (S.nextToken && guard++ < 40) { await loadVideos(true); }
+}
 
-  if (!filtered.length && !append) {
-    grid.innerHTML = '<div style="grid-column:1/-1;color:var(--text2);padding:40px;text-align:center;">Không tìm thấy video nào.</div>';
+// ── Status: read the real privacy ───────────────────────────────────────
+// After the backend fix, v.status is the privacy for a finished video.
+// Older servers still return the raw uploadStatus, so fall back to
+// extra.privacy_status when status is not a privacy value.
+const PRIVACY = { public: ['Công khai', 'green'], unlisted: ['Không công khai', 'orange'], private: ['Riêng tư', 'red'] };
+function statusOf(v) {
+  const s = (v.status || '').toLowerCase();
+  if (PRIVACY[s]) return s;
+  if (s === 'failed' || s === 'rejected' || s === 'deleted') return 'failed';
+  const p = (v.extra && v.extra.privacy_status || '').toLowerCase();
+  if (PRIVACY[p]) return p;
+  if (S.provider === 'facebook') return 'unknown';
+  return s ? 'processing' : 'unknown';
+}
+function pill(v) {
+  const s = statusOf(v);
+  if (PRIVACY[s]) return `<span class="tag ${PRIVACY[s][1]}">${PRIVACY[s][0]}</span>`;
+  if (s === 'failed') return `<span class="tag red">Bị từ chối</span>`;
+  if (s === 'processing') return `<span class="tag muted">Đang xử lý</span>`;
+  return `<span class="tag muted" title="${S.provider === 'facebook' ? 'Facebook không trả trạng thái' : 'Không rõ'}">—</span>`;
+}
+
+// ── Filtering / sorting ─────────────────────────────────────────────────
+function filtered() {
+  const q = ($('searchInput').value || '').trim().toLowerCase();
+  let rows = S.videos;
+  if (S.status !== 'all') rows = rows.filter(v => statusOf(v) === S.status);
+  if (q) rows = rows.filter(v => (v.title || '').toLowerCase().includes(q) || (v.description || '').toLowerCase().includes(q) || (v.tags || []).join(' ').toLowerCase().includes(q));
+  const k = S.sortKey, dir = S.sortDir === 'asc' ? 1 : -1;
+  const order = { public: 0, unlisted: 1, private: 2, processing: 3, failed: 4, unknown: 5 };
+  return rows.slice().sort((a, b) => {
+    let x, y;
+    if (k === 'title') { x = (a.title || '').toLowerCase(); y = (b.title || '').toLowerCase(); return x < y ? -dir : x > y ? dir : 0; }
+    if (k === 'status') { x = order[statusOf(a)]; y = order[statusOf(b)]; return (x - y) * dir; }
+    if (k === 'published_at') { x = Date.parse(a.published_at || 0) || 0; y = Date.parse(b.published_at || 0) || 0; return (x - y) * dir; }
+    x = Number(a[k] || 0); y = Number(b[k] || 0); return (x - y) * dir;
+  });
+}
+function setSort(key) {
+  if (S.sortKey === key) S.sortDir = S.sortDir === 'asc' ? 'desc' : 'asc';
+  else { S.sortKey = key; S.sortDir = (key === 'title' || key === 'status') ? 'asc' : 'desc'; }
+  render();
+}
+function setStatus(s) { S.status = s; render(); }
+function setView(v) { S.view = v; localStorage.setItem('vm_view', v); render(); }
+
+// ── Render ──────────────────────────────────────────────────────────────
+function render() {
+  const main = $('main');
+  const hasChannel = !!S.channel;
+  $('filterBar').style.visibility = hasChannel ? 'visible' : 'hidden';
+  $('viewTable').classList.toggle('on', S.view === 'table');
+  $('viewGrid').classList.toggle('on', S.view === 'grid');
+
+  // status chips with counts over what is loaded
+  const counts = { all: S.videos.length, public: 0, unlisted: 0, private: 0, processing: 0 };
+  S.videos.forEach(v => { const s = statusOf(v); if (counts[s] !== undefined) counts[s]++; });
+  const chipDefs = [['all', 'Tất cả'], ['public', 'Công khai'], ['unlisted', 'Không công khai'], ['private', 'Riêng tư'], ['processing', 'Đang xử lý']];
+  $('statusChips').innerHTML = chipDefs.map(([k, l]) =>
+    `<button class="chip ${S.status === k ? 'active' : ''}" role="radio" aria-checked="${S.status === k}" onclick="setStatus('${k}')">${l} <span class="count">${counts[k]}</span></button>`).join('');
+  $('loadedInfo').textContent = hasChannel ? (S.total != null ? `Đã tải ${S.videos.length} / ${formatNumber(S.total)} video` : `Đã tải ${S.videos.length} video`) : '';
+
+  if (S.error) {
+    main.innerHTML = `<div class="banner err"><span class="material-symbols-outlined">error</span><span style="flex:1">${escHtml(S.error)}</span>
+      ${/cấp quyền|token/i.test(S.error) ? `<a class="btn-sm" href="/auth-manager" target="_blank" rel="noopener">Cấp quyền lại</a>` : ''}
+      <button class="btn-sm" onclick="retry()">Thử lại</button></div>` + (hasChannel ? '' : emptyState());
     return;
   }
+  if (!hasChannel) { main.innerHTML = emptyState(); return; }
+  if (S.loading) { main.innerHTML = skeleton(); return; }
 
-  const html = filtered.map(v => {
-    const statusBadge = { public: 'badge-public', private: 'badge-private', unlisted: 'badge-unlisted' }[v.status] || 'badge-private';
-    const statusLabel = { public: '🌍 Public', private: '🔒 Private', unlisted: '🔗 Unlisted' }[v.status] || v.status;
-    const duration = formatDuration(v.duration);
-
-    return `
-    <div class="video-card" data-id="${v.id}">
-      <div class="video-thumb-container">
-        ${v.thumbnail_url
-          ? `<img class="video-thumb" src="${v.thumbnail_url}" alt="${escHtml(v.title)}">`
-          : `<div class="video-thumb-placeholder">🎬</div>`}
-        ${duration ? `<div class="video-duration">${duration}</div>` : ''}
-        <div class="video-status-badge ${statusBadge}">${statusLabel}</div>
-      </div>
-      <div class="video-body">
-        <div class="video-title" title="${escHtml(v.title)}">${escHtml(v.title)}</div>
-        <div class="video-meta">
-          ${v.views ? `<span>👁️ ${formatNumber(v.views)}</span>` : ''}
-          ${v.likes ? `<span>❤️ ${formatNumber(v.likes)}</span>` : ''}
-          ${v.published_at ? `<span>📅 ${formatDate(v.published_at)}</span>` : ''}
-        </div>
-      </div>
-      <div class="video-actions">
-        <button class="video-action-btn vab-edit" onclick="openEditModal('${v.id}')">✏️ Sửa</button>
-        <button class="video-action-btn vab-link" onclick="window.open('${v.url}','_blank')">🔗 Xem</button>
-        <button class="video-action-btn vab-delete" onclick="confirmDelete('${v.id}','${escHtml(v.title)}')">🗑️</button>
-      </div>
-    </div>`;
-  }).join('');
-
-  if (append) {
-    // Remove the loading spinner before appending
-    const spinner = grid.querySelector('.spinner');
-    if (spinner && spinner.parentElement) spinner.parentElement.remove();
-    grid.insertAdjacentHTML('beforeend', html);
-  } else {
-    grid.innerHTML = html;
+  const rows = filtered();
+  if (!S.videos.length) {
+    main.innerHTML = `<div class="empty"><span class="material-symbols-outlined">video_library</span><h3>Kênh này chưa có video</h3><p>Tải video đầu tiên lên bằng nút ở góc trên bên phải.</p></div>`; return;
   }
+  main.innerHTML = S.view === 'grid' ? renderGrid(rows) : renderTable(rows);
 }
 
-function filterVideos() { renderVideos(allVideos); }
-
-function updatePagination(total, nextToken) {
-  const pg = document.getElementById('pagination');
-  pg.style.display = 'flex';
-  document.getElementById('btnPrev').disabled = currentPage === 0;
-  document.getElementById('btnNext').disabled = !nextToken;
-  document.getElementById('pageInfo').textContent = `Trang ${currentPage + 1}`;
+function emptyState() {
+  if (!S.accounts.length) return `<div class="empty"><span class="material-symbols-outlined">key</span><h3>Chưa có tài khoản ${PROVIDER_NAMES[S.provider]} nào được cấp quyền</h3><p>Cấp quyền trong Auth Manager rồi bấm Làm mới.</p><a class="btn-secondary" href="/auth-manager" target="_blank" rel="noopener">Mở Auth Manager</a> <button class="btn-sm" onclick="loadAccounts()">Làm mới</button></div>`;
+  if (!S.channels.length) return `<div class="empty"><span class="material-symbols-outlined">subscriptions</span><h3>Không tìm thấy kênh</h3><p>Tài khoản này không có kênh ${PROVIDER_NAMES[S.provider]} nào.</p></div>`;
+  return `<div class="empty"><span class="material-symbols-outlined">subscriptions</span><h3>Chưa chọn kênh</h3><p>Chọn kênh ở thanh trên để xem danh sách video.</p></div>`;
+}
+function skeleton() {
+  const r = Array.from({ length: 6 }, () => `<tr class="skeleton"><td><div style="width:96px;height:54px"></div></td><td><div style="width:60%"></div></td><td><div style="width:70px"></div></td><td><div></div></td><td><div></div></td><td><div></div></td><td><div style="width:80px"></div></td><td></td></tr>`).join('');
+  return `<div class="table-container"><table><tbody>${r}</tbody></table></div>`;
 }
 
-function loadNextPage() {
-  if (pageTokenStack[currentPage + 1]) {
-    currentPage++;
-    loadVideos(pageTokenStack[currentPage]);
-  }
+const COLS = [['title', 'Video'], ['status', 'Quyền riêng tư'], ['views', 'Lượt xem', 'num'], ['likes', 'Thích', 'num'], ['comments', 'Bình luận', 'num'], ['published_at', 'Ngày đăng']];
+function th(key, label, cls) {
+  const sorted = S.sortKey === key;
+  const icon = sorted ? (S.sortDir === 'asc' ? 'arrow_upward' : 'arrow_downward') : 'unfold_more';
+  return `<th class="${cls || ''} ${sorted ? 'sorted' : ''}" aria-sort="${sorted ? (S.sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button onclick="setSort('${key}')">${label}<span class="material-symbols-outlined">${icon}</span></button></th>`;
+}
+function renderTable(rows) {
+  const tall = S.provider === 'tiktok';
+  const body = rows.length ? rows.map(v => `
+    <tr tabindex="0" data-id="${escAttr(v.id)}">
+      <td><div class="vcell"><div class="thumb ${tall ? 'tall' : ''}">${v.thumbnail_url ? `<img src="${escAttr(v.thumbnail_url)}" alt="" loading="lazy">` : ''}${v.duration ? `<span class="dur">${formatDuration(v.duration)}</span>` : ''}</div>
+        <div style="min-width:0"><div class="vtitle" title="${escAttr(v.title)}">${escHtml(v.title)}</div><div class="vsub">${v.duration ? formatDuration(v.duration) + ' · ' : ''}ID ${escHtml(v.id)}</div></div></div></td>
+      <td>${pill(v)}</td>
+      <td class="num">${formatNumber(v.views)}</td>
+      <td class="num">${formatNumber(v.likes)}</td>
+      <td class="num">${formatNumber(v.comments)}</td>
+      <td style="color:var(--text2); white-space:nowrap;">${formatDate(v.published_at)}</td>
+      <td><div class="row-actions">
+        <button class="btn-icon" title="Chỉnh sửa" onclick="openEditModal('${escAttr(v.id)}')"><span class="material-symbols-outlined">edit</span></button>
+        <a class="btn-icon" title="Mở trên ${PROVIDER_NAMES[S.provider]}" href="${escAttr(v.url || '#')}" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span></a>
+        <button class="btn-icon" title="Xóa" onclick="confirmDelete('${escAttr(v.id)}')"><span class="material-symbols-outlined">delete</span></button>
+      </div></td>
+    </tr>`).join('')
+    : `<tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:32px;">Không có video khớp bộ lọc. <button class="btn-sm" onclick="clearFilters()">Xóa bộ lọc</button>${S.nextToken ? ` · <button class="btn-sm" onclick="loadAllRemaining()">Tải toàn bộ kênh</button>` : ''}</td></tr>`;
+  return `<div class="table-container"><table>
+    <thead><tr>${COLS.map(c => th(c[0], c[1], c[2])).join('')}<th></th></tr></thead>
+    <tbody>${body}</tbody></table>
+    <div class="tfoot"><span>${rows.length} video khớp / ${S.videos.length} đã tải</span>${footerMore()}</div></div>`;
+}
+function renderGrid(rows) {
+  const tall = S.provider === 'tiktok';
+  if (!rows.length) return `<div class="empty"><h3>Không có video khớp bộ lọc</h3><button class="btn-sm" onclick="clearFilters()">Xóa bộ lọc</button></div>`;
+  return `<div class="grid">${rows.map(v => `
+    <div class="card ${tall ? 'tall' : ''}" tabindex="0">
+      <div class="cthumb">${v.thumbnail_url ? `<img src="${escAttr(v.thumbnail_url)}" alt="" loading="lazy">` : ''}${v.duration ? `<span class="dur">${formatDuration(v.duration)}</span>` : ''}
+        <div class="cactions">
+          <button class="btn-icon" title="Chỉnh sửa" onclick="openEditModal('${escAttr(v.id)}')"><span class="material-symbols-outlined">edit</span></button>
+          <a class="btn-icon" title="Mở" href="${escAttr(v.url || '#')}" target="_blank" rel="noopener"><span class="material-symbols-outlined">open_in_new</span></a>
+          <button class="btn-icon" title="Xóa" onclick="confirmDelete('${escAttr(v.id)}')"><span class="material-symbols-outlined">delete</span></button>
+        </div></div>
+      <div class="cbody"><div class="vtitle" title="${escAttr(v.title)}">${escHtml(v.title)}</div>
+        <div class="cmeta"><span><span class="material-symbols-outlined">visibility</span> ${formatNumber(v.views)}</span><span><span class="material-symbols-outlined">thumb_up</span> ${formatNumber(v.likes)}</span><span><span class="material-symbols-outlined">chat_bubble</span> ${formatNumber(v.comments)}</span></div>
+        <div class="cfoot">${pill(v)}<span>${formatDate(v.published_at)}</span></div></div>
+    </div>`).join('')}</div><div class="tfoot" style="border:none; background:none; padding:14px 0 0;"><span>${rows.length} video khớp / ${S.videos.length} đã tải</span>${footerMore()}</div>`;
+}
+function footerMore() {
+  if (S.loadingMore) return `<span>Đang tải thêm…</span>`;
+  if (!S.nextToken) return `<span class="btn-sm" style="opacity:.5; cursor:default;">Đã tải toàn bộ kênh</span>`;
+  return `<span style="display:flex; gap:8px;"><button class="btn-secondary" style="padding:6px 14px; font-size:.82rem;" onclick="loadVideos(true)">Tải thêm ${PAGE_SIZE}</button><button class="btn-sm" onclick="loadAllRemaining()">Tải toàn bộ kênh</button></span>`;
+}
+function clearFilters() { S.status = 'all'; $('searchInput').value = ''; render(); }
+function retry() { S.error = ''; if (S.channel) loadVideos(); else if (S.tokenId || S.email) loadChannels(); else loadAccounts(); }
+
+// ── Edit ────────────────────────────────────────────────────────────────
+let _editSnapshot = null;
+function openEditModal(id) {
+  const v = S.videos.find(x => x.id === id); if (!v) return;
+  $('editVideoId').value = id;
+  $('editTitle').value = v.title || '';
+  $('editDescription').value = v.description || '';
+  $('editTags').value = (v.tags || []).join(', ');
+  const s = statusOf(v);
+  $('editPrivacy').value = PRIVACY[s] ? s : 'private';   // never a value the select lacks
+  $('editThumbnailPath').value = '';
+  _editSnapshot = { title: $('editTitle').value, description: $('editDescription').value, tags: $('editTags').value, privacy: $('editPrivacy').value };
+  countChars('editTitle', 'editTitleCount');
+  $('editModal').showModal();
+  $('editTitle').focus();
+}
+function closeEditModal() { $('editModal').close(); }
+async function saveEdit() {
+  const id = $('editVideoId').value;
+  const body = {};
+  // Send ONLY what changed. The old version re-sent every field on every save,
+  // and — via the status bug — could send privacy "" for an untouched select.
+  if ($('editTitle').value !== _editSnapshot.title) body.title = $('editTitle').value;
+  if ($('editDescription').value !== _editSnapshot.description) body.description = $('editDescription').value;
+  if ($('editTags').value !== _editSnapshot.tags) body.tags = $('editTags').value.split(',').map(t => t.trim()).filter(Boolean);
+  if ($('editPrivacy').value !== _editSnapshot.privacy) body.privacy = $('editPrivacy').value;
+  const thumb = $('editThumbnailPath').value.trim();
+  const btn = $('btnSaveEdit'); btn.disabled = true;
+  try {
+    if (Object.keys(body).length) {
+      await apiJson(API(`/videos/${encodeURIComponent(id)}?provider=${S.provider}&${authParam()}`),
+        { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const v = S.videos.find(x => x.id === id);
+      if (v) { if (body.title !== undefined) v.title = body.title; if (body.description !== undefined) v.description = body.description; if (body.tags) v.tags = body.tags; if (body.privacy) { v.status = body.privacy; if (v.extra) v.extra.privacy_status = body.privacy; } }
+    }
+    if (thumb) {
+      // Checked now. The old code fired this and ignored the result, then
+      // reported success regardless.
+      await apiJson(API(`/videos/${encodeURIComponent(id)}/thumbnail?provider=${S.provider}&${authParam()}&thumbnail_path=${encodeURIComponent(thumb)}`), { method: 'POST' });
+    }
+    toast('success', Object.keys(body).length || thumb ? 'Đã lưu thay đổi' : 'Không có gì thay đổi');
+    closeEditModal(); render();
+  } catch (e) { toast('error', 'Không lưu được: ' + e.message); }
+  btn.disabled = false;
 }
 
-function loadPrevPage() {
-  if (currentPage > 0) {
-    currentPage--;
-    loadVideos(pageTokenStack[currentPage]);
-  }
+// ── Delete ──────────────────────────────────────────────────────────────
+let _pendingDeleteId = null;
+function confirmDelete(id) {
+  const v = S.videos.find(x => x.id === id); if (!v) return;
+  _pendingDeleteId = id;
+  $('confirmSub').textContent = `“${v.title}” sẽ bị xóa khỏi ${PROVIDER_NAMES[S.provider]}. Không hoàn tác được.`;
+  $('confirmOkBtn').onclick = executeDelete;
+  $('confirmDialog').showModal();
+}
+function closeConfirm() { $('confirmDialog').close(); _pendingDeleteId = null; }
+async function executeDelete() {
+  const id = _pendingDeleteId; closeConfirm(); if (!id) return;
+  try {
+    await apiJson(API(`/videos/${encodeURIComponent(id)}?provider=${S.provider}&${authParam()}`), { method: 'DELETE' });
+    S.videos = S.videos.filter(v => v.id !== id);
+    if (S.total != null) S.total = Math.max(0, S.total - 1);
+    toast('success', 'Đã xóa video'); render();
+  } catch (e) { toast('error', 'Không xóa được: ' + e.message); }
 }
 
-// ─── Upload ────────────────────────────────────────────────────────
+// ── Upload ──────────────────────────────────────────────────────────────
 function openUploadModal() {
-  document.getElementById('uploadModal').classList.add('open');
-  document.getElementById('uploadProgressArea').style.display = 'none';
-  document.getElementById('btnStartUpload').disabled = false;
-  document.getElementById('btnCancelUpload').textContent = 'Hủy';
+  if (!S.channel) return;
+  ['uploadFilePath', 'uploadTitle', 'uploadDescription', 'uploadTags', 'uploadThumbnail'].forEach(i => $(i).value = '');
+  $('uploadPrivacy').value = 'private';
+  updateFilePicker(); updateThumbPreview(); countChars('uploadTitle', 'uploadTitleCount');
+  $('uploadProgressArea').classList.add('hidden');
+  $('btnStartUpload').disabled = false; $('btnStartUpload').textContent = 'Xếp vào hàng đợi';
+  $('btnCancelUpload').textContent = 'Đóng';
+  $('uploadChannelName').textContent = S.channel.title;
+  S.uploadTaskId = null;
+  loadCategories();
+  $('uploadModal').showModal();
 }
 function closeUploadModal() {
-  document.getElementById('uploadModal').classList.remove('open');
-  if (uploadEventSource) { uploadEventSource.close(); uploadEventSource = null; }
+  $('uploadModal').close();
+  if (S.uploadES) { S.uploadES.close(); S.uploadES = null; }
 }
-
-function pickFile() {
-  // Open File Manager in picker mode popup with cache-buster
-  const popup = window.open(`/file-manager?mode=picker&filter=video&t=${Date.now()}`, 'filePicker',
-    'width=960,height=640,left=150,top=100,resizable=yes');
-
-
-  const handler = (event) => {
-    // File Manager sends type: 'file-picker-select'
-    if (event.data?.type === 'file-picker-select' && event.data.path) {
-      const path = event.data.path;
-      document.getElementById('uploadFilePath').value = path;
-      updateFilePicker();
-      window.removeEventListener('message', handler);
+async function loadCategories() {
+  const sel = $('uploadCategory');
+  if (sel.dataset.loaded === S.provider) return;
+  try {
+    const d = await apiJson(API(`/categories?provider=${S.provider}&region_code=VN`));
+    const cats = d.categories || [];
+    if (cats.length) { sel.innerHTML = cats.map(c => `<option value="${escAttr(c.id)}" ${c.id === '22' ? 'selected' : ''}>${escHtml(c.title || c.name)}</option>`).join(''); sel.dataset.loaded = S.provider; }
+  } catch (e) { /* keep the default option */ }
+}
+function pickFile() { openPicker('video', p => { $('uploadFilePath').value = p; updateFilePicker(); }); }
+function pickThumb(inputId) { openPicker('image', p => { $(inputId).value = p; if (inputId === 'uploadThumbnail') updateThumbPreview(); }); }
+function openPicker(filter, onPick) {
+  const popup = window.open(`/file-manager?mode=picker&filter=${filter}&t=${Date.now()}`, 'filePicker', 'width=960,height=640,left=150,top=100,resizable=yes');
+  const handler = (ev) => {
+    if (ev.data && ev.data.type === 'file-picker-select' && ev.data.path) {
+      onPick(ev.data.path); window.removeEventListener('message', handler);
       if (popup && !popup.closed) popup.close();
     }
   };
   window.addEventListener('message', handler);
-
-  // Cleanup if popup closed without selecting
-  const checkClosed = setInterval(() => {
-    if (popup && popup.closed) {
-      clearInterval(checkClosed);
-      window.removeEventListener('message', handler);
-    }
-  }, 1000);
+  const t = setInterval(() => { if (!popup || popup.closed) { clearInterval(t); window.removeEventListener('message', handler); } }, 1000);
 }
-
 function updateFilePicker() {
-  const path = document.getElementById('uploadFilePath').value.trim();
-  const picker = document.getElementById('filePicker');
-  const pathEl = document.getElementById('filePickerPath');
-
-  if (path) {
-    picker.classList.add('has-file');
-    pathEl.textContent = path;
-    pathEl.style.display = 'block';
-    // Auto-fill title from filename if empty
-    const title = document.getElementById('uploadTitle');
-    if (!title.value) {
-      const name = path.split(/[/\\]/).pop().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-      title.value = name;
-    }
-  } else {
-    picker.classList.remove('has-file');
-    pathEl.style.display = 'none';
-  }
+  const p = $('uploadFilePath').value.trim();
+  $('filePicker').classList.toggle('has-file', !!p);
+  $('filePickerPath').textContent = p;
+  if (p && !$('uploadTitle').value) { $('uploadTitle').value = p.split(/[/\\]/).pop().replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' '); countChars('uploadTitle', 'uploadTitleCount'); }
 }
-
 function updateThumbPreview() {
-  const path = document.getElementById('uploadThumbnail').value.trim();
-  const preview = document.getElementById('thumbPreview');
-  if (path) {
-    preview.innerHTML = `<img src="${path}" onerror="this.parentNode.textContent='🖼️'">`;
-  } else {
-    preview.textContent = '🖼️';
-  }
+  const p = $('uploadThumbnail').value.trim(); const box = $('thumbPreview');
+  if (!p) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  // Served through File Manager, not as a disk path the browser cannot read.
+  box.innerHTML = `<img src="/api/v1/file-manager/raw?path=${encodeURIComponent(p)}" style="width:100%;height:100%;object-fit:cover" onerror="this.parentNode.classList.add('hidden')">`;
+  box.classList.remove('hidden');
 }
-
 async function startUpload() {
-  const filePath = document.getElementById('uploadFilePath').value.trim();
-  const title = document.getElementById('uploadTitle').value.trim();
-  if (!filePath) { toast('error', '❌ Vui lòng chọn file video'); return; }
-  if (!title) { toast('error', '❌ Vui lòng nhập tiêu đề video'); return; }
-
-  const tagsRaw = document.getElementById('uploadTags').value;
-  const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
-
+  const filePath = $('uploadFilePath').value.trim(), title = $('uploadTitle').value.trim();
+  if (!filePath) return toast('error', 'Chưa chọn tệp video.');
+  if (!title) return toast('error', 'Chưa nhập tiêu đề.');
   const payload = {
-    provider: currentProvider,
-    email: currentEmail,
-    cred_id: currentTokenId,
-    token_id: currentTokenId,
-    channel_id: currentChannel ? currentChannel.id : "",
-    file_path: filePath,
-    title: title,
-    description: document.getElementById('uploadDescription').value,
-    tags: tags,
-    category_id: document.getElementById('uploadCategory').value,
-    privacy: document.getElementById('uploadPrivacy').value,
-    thumbnail_path: document.getElementById('uploadThumbnail').value.trim(),
+    provider: S.provider, email: S.email, cred_id: S.tokenId, token_id: S.tokenId, channel_id: S.channel.id,
+    file_path: filePath, title, description: $('uploadDescription').value,
+    tags: $('uploadTags').value.split(',').map(t => t.trim()).filter(Boolean),
+    category_id: $('uploadCategory').value, privacy: $('uploadPrivacy').value, thumbnail_path: $('uploadThumbnail').value.trim(),
   };
-
-  document.getElementById('btnStartUpload').disabled = true;
-  document.getElementById('uploadProgressArea').style.display = 'block';
-  document.getElementById('uploadProgressFill').style.width = '2%';
-  document.getElementById('uploadStatusText').textContent = 'Đang xếp vào hàng đợi...';
-
+  $('btnStartUpload').disabled = true;
+  $('uploadProgressArea').classList.remove('hidden'); $('uploadProgressFill').style.width = '2%'; $('uploadStatusText').textContent = 'Đang xếp vào hàng đợi…';
   try {
-    const res = await fetch(API('/upload'), { method: 'POST',
-      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    const data = await res.json();
-    if (!data.success) { throw new Error(data.detail || 'Upload thất bại'); }
-
-    const taskId = data.task_id;
-    document.getElementById('uploadStatusText').textContent = `✅ Task ID: ${taskId.slice(0,12)}... — Đang upload...`;
-    startProgressStream(taskId);
-    startQueuePolling();
-  } catch(e) {
-    toast('error', `❌ ${e.message}`);
-    document.getElementById('btnStartUpload').disabled = false;
+    const d = await apiJson(API('/upload'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!d.success || !d.task_id) throw new Error(d.detail || 'Không xếp được vào hàng đợi');
+    S.uploadTaskId = d.task_id;
+    $('btnCancelUpload').textContent = 'Hủy tải lên';
+    streamProgress(d.task_id); startQueuePolling();
+  } catch (e) { toast('error', e.message); $('btnStartUpload').disabled = false; }
+}
+function streamProgress(taskId) {
+  if (S.uploadES) S.uploadES.close();
+  S.uploadES = new EventSource(API(`/upload/progress/${taskId}`));
+  S.uploadES.onmessage = (e) => {
+    let d; try { d = JSON.parse(e.data); } catch (_) { return; }
+    if (d.event === 'close') { S.uploadES.close(); S.uploadES = null; return; }
+    const pct = d.progress_pct || 0;
+    $('uploadProgressFill').style.width = `${Math.max(pct, 2)}%`;
+    const map = { queued: 'Đang chờ đến lượt…', uploading: `Đang tải lên ${pct}%`, processing: 'Đang đặt thumbnail…', done: 'Tải lên thành công', error: `Lỗi: ${d.error_message || 'không rõ'}`, cancelled: 'Đã hủy' };
+    $('uploadStatusText').textContent = map[d.status] || d.status;
+    if (d.status === 'done') {
+      $('btnCancelUpload').textContent = 'Đóng'; $('btnStartUpload').textContent = 'Tải video khác'; $('btnStartUpload').disabled = false;
+      $('btnStartUpload').onclick = () => openUploadModal();
+      toast('success', `Đã tải lên “${d.title || title}”`); loadVideos();
+    } else if (d.status === 'error' || d.status === 'cancelled') {
+      $('btnCancelUpload').textContent = 'Đóng'; $('btnStartUpload').disabled = false;
+      if (d.status === 'error') toast('error', `Tải lên thất bại: ${d.error_message || 'không rõ'}`);
+    }
+  };
+}
+$('btnCancelUpload').addEventListener('click', async (ev) => {
+  // "Hủy tải lên" while a task runs: really cancel it (DELETE was never called before).
+  if (S.uploadTaskId && $('btnCancelUpload').textContent === 'Hủy tải lên') {
+    ev.stopImmediatePropagation();
+    try { await apiJson(API(`/upload/tasks/${S.uploadTaskId}`), { method: 'DELETE' }); toast('success', 'Đã hủy tải lên'); }
+    catch (e) { toast('error', 'Không hủy được: ' + e.message); }
+    S.uploadTaskId = null; $('btnCancelUpload').textContent = 'Đóng'; $('btnStartUpload').disabled = false;
   }
-}
+}, true);
 
-function startProgressStream(taskId) {
-  if (uploadEventSource) uploadEventSource.close();
-  uploadEventSource = new EventSource(API(`/upload/progress/${taskId}`));
-  uploadEventSource.onmessage = (e) => {
-    const data = JSON.parse(e.data);
-    if (data.event === 'close') { uploadEventSource.close(); return; }
-
-    const pct = data.progress_pct || 0;
-    document.getElementById('uploadProgressFill').style.width = `${Math.max(pct, 2)}%`;
-
-    const providerName = currentProvider === 'youtube' ? 'YouTube' : currentProvider === 'facebook' ? 'Facebook' : 'TikTok';
-    const statusMap = { queued:'⏳ Chờ...', uploading:`📤 Đang upload ${pct}%`, processing:`⚙️ ${providerName} đang xử lý...`,
-      done:'✅ Upload thành công!', error:`❌ ${data.error_message||'Lỗi upload'}`, cancelled:'🚫 Đã hủy' };
-    document.getElementById('uploadStatusText').textContent = statusMap[data.status] || data.status;
-
-    if (data.status === 'done') {
-      document.getElementById('btnCancelUpload').textContent = 'Đóng';
-      toast('success', `✅ Video "${data.title}" đã upload thành công!`);
-      loadVideos(pageTokenStack[currentPage]);
-    } else if (data.status === 'error') {
-      document.getElementById('btnStartUpload').disabled = false;
-      toast('error', `❌ Upload thất bại: ${data.error_message}`);
-    }
-  };
-}
-
-// ─── Edit Video ────────────────────────────────────────────────────
-function openEditModal(videoId) {
-  const video = allVideos.find(v => v.id === videoId);
-  if (!video) return;
-  document.getElementById('editVideoId').value = videoId;
-  document.getElementById('editTitle').value = video.title || '';
-  document.getElementById('editDescription').value = video.description || '';
-  document.getElementById('editTags').value = (video.tags || []).join(', ');
-  document.getElementById('editPrivacy').value = video.status || 'private';
-  document.getElementById('editModal').classList.add('open');
-}
-function closeEditModal() { document.getElementById('editModal').classList.remove('open'); }
-
-async function saveEdit() {
-  const videoId = document.getElementById('editVideoId').value;
-  const tagsRaw = document.getElementById('editTags').value;
-  const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
-  const thumbnailPath = document.getElementById('editThumbnailPath').value.trim();
-
-  const body = {
-    title: document.getElementById('editTitle').value,
-    description: document.getElementById('editDescription').value,
-    tags, privacy: document.getElementById('editPrivacy').value,
-  };
-
-  const authParam = currentTokenId
-    ? `token_id=${encodeURIComponent(currentTokenId)}`
-    : `email=${encodeURIComponent(currentEmail)}`;
-
+// ── Queue ───────────────────────────────────────────────────────────────
+async function refreshQueue() {
   try {
-    const res = await fetch(
-      API(`/videos/${videoId}?provider=${currentProvider}&${authParam}`),
-      { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) }
-    );
-    const data = await res.json();
-    if (data.success) {
-      // Set thumbnail if provided
-      if (thumbnailPath) {
-        await fetch(API(`/videos/${videoId}/thumbnail?provider=${currentProvider}&${authParam}&thumbnail_path=${encodeURIComponent(thumbnailPath)}`), {method:'POST'});
-      }
-      toast('success', '✅ Video đã được cập nhật!');
-      closeEditModal();
-      loadVideos(pageTokenStack[currentPage]);
-    } else {
-      toast('error', `❌ ${data.detail || 'Cập nhật thất bại'}`);
-    }
-  } catch(e) {
-    toast('error', `❌ ${e.message}`);
-  }
+    const d = await apiJson(API('/upload/tasks?limit=50'));
+    S.tasks = d.tasks || [];
+  } catch (e) { return; }
+  const active = S.tasks.filter(t => ['queued', 'uploading', 'processing'].includes(t.status));
+  $('queueCount').textContent = active.length;
+  const names = { queued: ['Chờ', 'muted'], uploading: ['Đang tải', 'orange'], processing: ['Đang xử lý', 'orange'], done: ['Hoàn tất', 'green'], error: ['Lỗi', 'red'], cancelled: ['Đã hủy', 'muted'] };
+  $('queuePop').innerHTML = S.tasks.length ? S.tasks.slice(0, 20).map(t => {
+    const [l, c] = names[t.status] || [t.status, 'muted'];
+    return `<div class="qitem"><div class="qt"><div class="t1" title="${escAttr(t.title || '')}">${escHtml(t.title || t.file_path || t.task_id)}</div>
+      <div class="t2">${t.progress_pct != null ? t.progress_pct + '%' : ''}${t.error_message ? ' · ' + escHtml(t.error_message) : ''}</div>
+      ${['uploading', 'processing'].includes(t.status) ? `<div class="qbar"><div style="width:${t.progress_pct || 0}%"></div></div>` : ''}</div>
+      <span class="tag ${c}">${l}</span>
+      ${['queued', 'uploading'].includes(t.status) ? `<button class="btn-sm" onclick="cancelTask('${escAttr(t.task_id)}')">Hủy</button>` : ''}
+      ${t.status === 'done' && t.video_url ? `<a class="btn-sm" href="${escAttr(t.video_url)}" target="_blank" rel="noopener">Xem</a>` : ''}</div>`;
+  }).join('') : `<div class="qitem" style="color:var(--text-muted)">Chưa có tác vụ nào.</div>`;
+  if (!active.length && S.queueTimer) { clearInterval(S.queueTimer); S.queueTimer = null; }
+}
+function startQueuePolling() { if (!S.queueTimer) S.queueTimer = setInterval(refreshQueue, 2000); refreshQueue(); }
+function toggleQueue() { const p = $('queuePop'); p.classList.toggle('open'); if (p.classList.contains('open')) refreshQueue(); }
+async function cancelTask(id) {
+  try { await apiJson(API(`/upload/tasks/${id}`), { method: 'DELETE' }); toast('success', 'Đã hủy'); refreshQueue(); }
+  catch (e) { toast('error', 'Không hủy được: ' + e.message); }
 }
 
-// ─── Delete ────────────────────────────────────────────────────────
-let _pendingDeleteId = null;
-function confirmDelete(videoId, title) {
-  _pendingDeleteId = videoId;
-  document.getElementById('confirmTitle').textContent = 'Xóa video?';
-  document.getElementById('confirmSub').textContent = `Bạn có chắc muốn xóa video "${title}"? Hành động này không thể hoàn tác.`;
-  document.getElementById('confirmIcon').textContent = '🗑️';
-  document.getElementById('confirmOkBtn').onclick = executeDelete;
-  document.getElementById('confirmDialog').classList.add('open');
-}
-function closeConfirm() { document.getElementById('confirmDialog').classList.remove('open'); _pendingDeleteId = null; }
-
-async function executeDelete() {
-  if (!_pendingDeleteId) return;
-  closeConfirm();
-  const authParam = currentTokenId
-    ? `token_id=${encodeURIComponent(currentTokenId)}`
-    : `email=${encodeURIComponent(currentEmail)}`;
-
-  try {
-    const res = await fetch(
-      API(`/videos/${_pendingDeleteId}?provider=${currentProvider}&${authParam}`),
-      { method: 'DELETE' }
-    );
-    const data = await res.json();
-    if (data.success) {
-      toast('success', '🗑️ Video đã được xóa');
-      loadVideos(pageTokenStack[currentPage]);
-    } else {
-      toast('error', `❌ ${data.detail || 'Xóa thất bại'}`);
-    }
-  } catch(e) { toast('error', `❌ ${e.message}`); }
-}
-
-// ─── Queue polling ─────────────────────────────────────────────────
-async function startQueuePolling() {
-  if (queuePollingInterval) return;
-  queuePollingInterval = setInterval(async () => {
-    try {
-      const res = await fetch(API('/upload/tasks?limit=10'));
-      const data = await res.json();
-      const tasks = (data.tasks || []).filter(t => ['queued','uploading','processing'].includes(t.status));
-      const queueMini = document.getElementById('uploadQueueMini');
-      const items = document.getElementById('queueMiniItems');
-
-      if (tasks.length === 0) {
-        queueMini.style.display = 'none';
-        clearInterval(queuePollingInterval);
-        queuePollingInterval = null;
-        return;
-      }
-      queueMini.style.display = 'block';
-      items.innerHTML = tasks.map(t => `
-        <div class="queue-item-mini">
-          <div class="q-title" title="${escHtml(t.title)}">${escHtml(t.title)}</div>
-          <div class="q-pct">${t.progress_pct}%</div>
-        </div>
-        <div class="q-progress">
-          <div class="q-progress-fill" style="width:${t.progress_pct}%"></div>
-        </div>
-      `).join('');
-    } catch(e) {}
-  }, 2000);
-}
-
-// ─── Helpers ───────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────
 function toast(type, msg) {
-  const c = document.getElementById('toastContainer');
-  const el = document.createElement('div');
+  const c = $('toasts'); const el = document.createElement('div');
   el.className = `toast ${type}`;
-  el.innerHTML = msg;
+  const span = document.createElement('span'); span.textContent = msg;   // never innerHTML: messages carry API text
+  el.appendChild(span);
+  const x = document.createElement('button'); x.className = 'btn-close'; x.textContent = '✕'; x.setAttribute('aria-label', 'Đóng'); x.onclick = () => el.remove(); el.appendChild(x);
   c.appendChild(el);
-  setTimeout(() => { el.style.animation = 'none'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+  setTimeout(() => el.remove(), type === 'error' ? 6000 : 3500);
 }
+function escHtml(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+function escAttr(s) { return escHtml(s).replace(/'/g, '&#39;'); }
+function formatNumber(n) { return Number(n || 0).toLocaleString('vi-VN'); }
+function formatDate(s) { if (!s) return '—'; try { return new Date(s).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' }); } catch (e) { return s; } }
+function formatDuration(sec) { sec = Number(sec || 0); if (!sec) return ''; const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`; }
+function countChars(inputId, outId) { const el = $(inputId); $(outId).textContent = `${el.value.length}/${el.maxLength > 0 ? el.maxLength : 100}`; }
+$('uploadTitle').addEventListener('input', () => countChars('uploadTitle', 'uploadTitleCount'));
+$('editTitle').addEventListener('input', () => countChars('editTitle', 'editTitleCount'));
 
-function escHtml(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : ''; }
-function formatNumber(n) { if (!n) return '0'; return Number(n).toLocaleString('vi-VN'); }
-function formatDate(s) { try { return new Date(s).toLocaleDateString('vi-VN', {day:'2-digit',month:'2-digit',year:'numeric'}); } catch{return s;} }
-function formatDuration(sec) {
-  if (!sec) return '';
-  const h = Math.floor(sec/3600), m = Math.floor((sec%3600)/60), s = sec%60;
-  if (h) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-  return `${m}:${String(s).padStart(2,'0')}`;
-}
+// Keyboard: "/" focuses search; Esc closes the queue popover (dialogs handle
+// their own Esc natively); Enter in a dialog's text field submits it.
+document.addEventListener('keydown', (e) => {
+  if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) { e.preventDefault(); $('searchInput').focus(); }
+  if (e.key === 'Escape') $('queuePop').classList.remove('open');
+  if (e.key === 'Enter' && document.activeElement.tagName === 'INPUT') {
+    if ($('editModal').open) { e.preventDefault(); saveEdit(); }
+    else if ($('uploadModal').open && !$('btnStartUpload').disabled) { e.preventDefault(); startUpload(); }
+  }
+});
+document.addEventListener('click', (e) => { if (!e.target.closest('#queuePop') && !e.target.closest('#btnQueue')) $('queuePop').classList.remove('open'); });
+$('uploadModal').addEventListener('close', () => { if (S.uploadES) { S.uploadES.close(); S.uploadES = null; } });
 
-// ─── Init ──────────────────────────────────────────────────────────
-loadAccounts();
+// ── Init ────────────────────────────────────────────────────────────────
+render();
+loadProviders().then(loadAccounts);
+refreshQueue();
 </script>
 </body>
 </html>

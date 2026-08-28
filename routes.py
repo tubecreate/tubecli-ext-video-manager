@@ -158,6 +158,25 @@ class EnqueueUploadRequest(BaseModel):
     thumbnail_path: str = ""
 
 
+def _public_channel(d: dict) -> dict:
+    """A channel dict safe to hand to the browser.
+
+    The Facebook provider stashes each Page's own access_token in
+    ChannelInfo.extra (it needs it for later calls), and to_dict() returned
+    extra verbatim — so GET /channels handed every Page token to the page's
+    JavaScript, and to anything that could read the response. Strip it here,
+    at the one place channels leave the server.
+    """
+    d = dict(d or {})
+    extra = d.get("extra")
+    if isinstance(extra, dict):
+        extra = {k: v for k, v in extra.items()
+                 if k not in ("access_token", "page_access_token", "token")}
+        d["extra"] = extra
+    return d
+
+
+
 # ── Providers ────────────────────────────────────────────────────────
 
 @router.get("/providers")
@@ -195,7 +214,7 @@ def list_channels(
     prov = _get_provider(provider)
     try:
         channels = prov.list_channels(token)
-        return {"success": True, "channels": [c.to_dict() for c in channels], "count": len(channels)}
+        return {"success": True, "channels": [_public_channel(c.to_dict()) for c in channels], "count": len(channels)}
     except Exception as e:
         err_str = str(e).lower()
         if "401" in err_str or "unauthorized" in err_str or "invalid credentials" in err_str or "auth" in err_str:
@@ -203,7 +222,7 @@ def list_channels(
                 logger.warning(f"Detected potential auth failure ({e}) in list_channels. Forcing token refresh and retrying...")
                 token = _get_token(email=email, cred_id=cred_id or token_id, provider=provider, force_refresh=True)
                 channels = prov.list_channels(token)
-                return {"success": True, "channels": [c.to_dict() for c in channels], "count": len(channels)}
+                return {"success": True, "channels": [_public_channel(c.to_dict()) for c in channels], "count": len(channels)}
             except Exception as retry_err:
                 logger.error(f"Forced refresh retry failed in list_channels: {retry_err}")
                 raise HTTPException(status_code=401, detail=f"Authentication failed. Please re-authorize. Detail: {retry_err}")
@@ -225,7 +244,7 @@ def get_channel(
         channel = prov.get_channel(channel_id, token)
         if not channel:
             raise HTTPException(status_code=404, detail=f"Channel '{channel_id}' not found")
-        return {"success": True, "channel": channel.to_dict()}
+        return {"success": True, "channel": _public_channel(channel.to_dict())}
     except HTTPException:
         raise
     except Exception as e:
@@ -302,9 +321,10 @@ def update_video(
     provider: str = Query("youtube"),
     email: str = Query(""),
     cred_id: str = Query(""),
+    token_id: str = Query(""),
 ):
     """Update video metadata (title, description, tags, privacy)."""
-    token = _get_token(email=email, cred_id=cred_id, provider=provider)
+    token = _get_token(email=email, cred_id=cred_id or token_id, provider=provider)
     prov = _get_provider(provider)
     try:
         result = prov.update_video(
@@ -331,9 +351,10 @@ def delete_video(
     provider: str = Query("youtube"),
     email: str = Query(""),
     cred_id: str = Query(""),
+    token_id: str = Query(""),
 ):
     """Permanently delete a video."""
-    token = _get_token(email=email, cred_id=cred_id, provider=provider)
+    token = _get_token(email=email, cred_id=cred_id or token_id, provider=provider)
     prov = _get_provider(provider)
     try:
         result = prov.delete_video(video_id, token)
@@ -354,10 +375,11 @@ def set_thumbnail(
     provider: str = Query("youtube"),
     email: str = Query(""),
     cred_id: str = Query(""),
+    token_id: str = Query(""),
     thumbnail_path: str = Query(..., description="Absolute path to thumbnail image (from File Manager)"),
 ):
     """Set custom thumbnail for a video (path from File Manager)."""
-    token = _get_token(email=email, cred_id=cred_id, provider=provider)
+    token = _get_token(email=email, cred_id=cred_id or token_id, provider=provider)
     prov = _get_provider(provider)
 
     if not os.path.isfile(thumbnail_path):
