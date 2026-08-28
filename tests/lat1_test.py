@@ -130,6 +130,9 @@ check("toast uses textContent, not innerHTML", "span.textContent = msg" in html 
 check("grid/table views both exist and the choice is remembered",
       "renderGrid" in html and "renderTable" in html and "localStorage.setItem('vm_view'" in html)
 check("zero counts are shown (formatNumber never hides 0)", "Number(n || 0).toLocaleString" in html)
+check("dialogs are centred — the universal margin:0 reset must not win over the UA dialog margin",
+      re.search(r"^dialog \{[^}]*margin: auto", html, re.M) is not None,
+      "dialog rule has no margin:auto -> box sits top-left")
 
 # ── 5. served through the real app ─────────────────────────────────────────
 os.environ.setdefault("TUBECLI_QUIET", "1")
