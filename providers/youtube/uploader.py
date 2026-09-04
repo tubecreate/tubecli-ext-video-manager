@@ -122,12 +122,18 @@ def upload_video(
             progress_callback(total_bytes, total_bytes)
 
         video_id = response.get("id", "")
+        # We asked for part="snippet,status", so the inserted resource tells us which
+        # channel YouTube actually filed the video under — free, no extra quota. It is
+        # the only way a caller can find out that its chosen channel was not honoured
+        # (videos.insert has no destination field; the token decides).
+        actual_channel_id = (response.get("snippet") or {}).get("channelId", "")
         return {
             "status": "success",
             "video_id": video_id,
             "url": f"https://www.youtube.com/watch?v={video_id}",
             "message": f"Video uploaded successfully: {video_id}",
             "title": title,
+            "channel_id": actual_channel_id,
         }
 
     except InterruptedError:

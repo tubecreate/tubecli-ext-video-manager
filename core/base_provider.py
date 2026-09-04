@@ -154,10 +154,37 @@ class VideoProvider(ABC):
         category_id: str = "22",
         privacy: str = "private",
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        page_id: str = "",
     ) -> dict:
         """
         Upload a video file.
+
         progress_callback(bytes_uploaded, total_bytes)
+
+        page_id — the destination the user picked in the UI: a Facebook Page id,
+        a TikTok account id, a YouTube channel id. EVERY provider must accept it,
+        even one that cannot act on it.
+
+        WHY it lives in the base signature instead of being decided per provider
+        by the caller: UploadQueue resolves providers through provider_registry,
+        so it deliberately knows nothing about which platform it is driving. The
+        moment the queue has to remember "Facebook and TikTok take page_id but
+        YouTube does not", every new provider becomes an edit to the queue — the
+        exact coupling the registry exists to remove. Facebook and TikTok had
+        already grown the parameter on their own while this abstract signature
+        was left behind, so the de-facto contract was page_id all along; the base
+        class simply never said so, and YouTube crashed with a TypeError on every
+        queued upload. Naming it in one place makes all three honest.
+
+        WHY an explicit parameter and not **kwargs: a catch-all would also
+        swallow genuine typos forever. A named parameter keeps
+        inspect.getcallargs() able to prove the queue and the providers still
+        agree — which is what tests/upload_queue_contract_test.py asserts.
+
+        A provider that cannot choose a destination (YouTube: the OAuth token
+        already belongs to exactly one channel) must accept page_id, document
+        that it ignores it, and upload anyway — never raise.
+
         Returns: {"status": "success"|"error", "video_id": str, "url": str, "message": str}
         """
         raise NotImplementedError

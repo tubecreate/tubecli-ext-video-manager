@@ -18,6 +18,12 @@ logger = logging.getLogger("VideoManager.UploadQueue")
 
 MAX_WORKERS = 3   # Max concurrent uploads
 
+# How many finished tasks stay in memory. clear_finished() existed but nothing
+# ever called it, so a long-running server grew the task dict forever. 50 is the
+# UI's own default page size (GET /upload/tasks?limit=50), so trimming at this
+# depth removes nothing the user could see.
+FINISHED_HISTORY = 50
+
 
 class UploadStatus(str, Enum):
     QUEUED = "queued"
@@ -65,6 +71,10 @@ class UploadTask:
             "task_id": self.task_id,
             "provider": self.provider,
             "email": self.email,
+            # The destination the user picked. It was missing, so when a video
+            # landed on the wrong channel/page the task record could not even say
+            # which one had been asked for. cred_id stays out on purpose.
+            "channel_id": self.channel_id,
             "file_path": self.file_path,
             "title": self.title,
             "description": self.description,
@@ -156,7 +166,12 @@ class UploadQueue:
         task._cancel_event.set()
         if task.status == UploadStatus.QUEUED:
             task.status = UploadStatus.CANCELLED
+            task.error_message = "Cancelled by user"
             task.finished_at = datetime.now().isoformat()
+            # The SSE stream only closes on done/error/cancelled. Without this
+            # broadcast the browser kept a spinner up for a task that will never
+            # run, and only found out on the next manual queue refresh.
+            self._broadcast(task)
         return True
 
     def clear_finished(self, keep_last: int = 20):
@@ -184,83 +199,49 @@ class UploadQueue:
     def _broadcast(self, task: UploadTask):
         """Broadcast latest task state to all SSE subscribers."""
         payload = task.to_dict()
+        # Snapshot under the lock. subscribe() appends from the request thread
+        # while this runs on the upload thread; iterating a list that another
+        # thread is appending to raises RuntimeError, and thrown from the worker
+        # that used to kill the upload thread outright (see _run_upload).
+        with self._lock:
+            subscribers = list(task._subscribers)
         dead = []
-        for cb in task._subscribers:
+        for cb in subscribers:
             try:
                 cb(payload)
             except Exception:
                 dead.append(cb)
-        for cb in dead:
-            task._subscribers.remove(cb)
+        if dead:
+            with self._lock:
+                for cb in dead:
+                    if cb in task._subscribers:
+                        task._subscribers.remove(cb)
 
     # ── Upload Runner ────────────────────────────────────────────
 
     def _run_upload(self, task: UploadTask):
-        """Worker thread: resolve token → call provider → upload."""
-        task.started_at = datetime.now().isoformat()
-        task.status = UploadStatus.UPLOADING
-        task.total_bytes = os.path.getsize(task.file_path)
-        self._broadcast(task)
+        """Worker thread: resolve token → call provider → upload.
 
+        WHY the whole body is wrapped: this runs on a ThreadPoolExecutor and
+        nobody ever awaits the Future, so anything that escapes here is dropped
+        on the floor. The task would then sit at "uploading 0%" forever — the SSE
+        stream closes only on done/error/cancelled — leaving a spinner in the
+        browser and an empty error_message. The setup lines used to live outside
+        the try, and os.path.getsize() can raise on its own if the file is moved
+        between enqueue and the worker picking the task up.
+        """
         try:
-            # Resolve access token
-            from core.token_resolver import resolve_token
-            # task.email is the primary key; task.cred_id may be a token_id or credential_id
-            access_token = resolve_token(
-                email=task.email,
-                cred_id=task.cred_id,
-                provider="google" if task.provider == "youtube" else task.provider,
-                required_scope_keyword=task.provider,
-            )
-            if not access_token:
-                raise RuntimeError(
-                    f"No valid token found for provider='{task.provider}' email='{task.email}'. "
-                    "Please authorize via Auth Manager first."
-                )
-
-            # Get provider and upload
-            from core.provider_registry import get as get_provider
-            provider_obj = get_provider(task.provider)
-
-            def progress_cb(bytes_done: int, total: int):
-                if task._cancel_event.is_set():
-                    raise InterruptedError("Upload cancelled by user")
-                task.bytes_uploaded = bytes_done
-                task.total_bytes = total
-                task.progress_pct = int(bytes_done / total * 100) if total > 0 else 0
-                self._broadcast(task)
-
-            result = provider_obj.upload_video(
-                file_path=task.file_path,
-                access_token=access_token,
-                title=task.title,
-                description=task.description,
-                tags=task.tags,
-                category_id=task.category_id,
-                privacy=task.privacy,
-                progress_callback=progress_cb,
-                page_id=task.channel_id,
-            )
-
-            if result.get("status") == "success":
-                task.video_id = result.get("video_id", "")
-                task.video_url = result.get("url", "")
-                task.status = UploadStatus.PROCESSING
-                task.progress_pct = 100
-                self._broadcast(task)
-
-                # Upload thumbnail if provided
-                if task.thumbnail_path and os.path.isfile(task.thumbnail_path) and task.video_id:
-                    try:
-                        provider_obj.set_thumbnail(task.video_id, task.thumbnail_path, access_token)
-                        logger.info(f"Thumbnail set for video {task.video_id}")
-                    except Exception as e:
-                        logger.warning(f"Thumbnail upload failed (non-critical): {e}")
-
-                task.status = UploadStatus.DONE
+            # Cancel must be honoured BEFORE the first byte. cancel_task() only
+            # sets the flag and marks a QUEUED task cancelled; this worker then
+            # overwrote the status and uploaded anyway. The flag is read inside
+            # progress_cb, but for a file smaller than one chunk next_chunk()
+            # ships the whole video before any progress fires — so a cancelled
+            # upload still went live on the channel.
+            if task._cancel_event.is_set():
+                task.status = UploadStatus.CANCELLED
+                task.error_message = task.error_message or "Cancelled by user"
             else:
-                raise RuntimeError(result.get("message", "Upload failed"))
-
+                self._do_upload(task)
         except InterruptedError:
             task.status = UploadStatus.CANCELLED
             task.error_message = "Cancelled by user"
@@ -271,6 +252,93 @@ class UploadQueue:
 
         task.finished_at = datetime.now().isoformat()
         self._broadcast(task)
+        # Nothing else ever trimmed the dict. Runs last so the task we just
+        # finished is the newest one and always survives the cut.
+        try:
+            self.clear_finished(keep_last=FINISHED_HISTORY)
+        except Exception as e:
+            logger.warning(f"clear_finished failed (non-critical): {e}")
+
+    def _do_upload(self, task: UploadTask):
+        """The actual upload. Raises on failure; _run_upload owns the bookkeeping."""
+        task.started_at = datetime.now().isoformat()
+        task.status = UploadStatus.UPLOADING
+        task.total_bytes = os.path.getsize(task.file_path)
+        self._broadcast(task)
+
+        # Resolve access token.
+        # NOTE: task.cred_id carries whatever the caller had — routes.py sends
+        # `token_id or cred_id`. Send a token_id whenever you have one: several
+        # tokens can share one credential_id (this box has nine YouTube tokens on
+        # a single credential), and resolve_token() returns the first match it
+        # finds, i.e. an arbitrary account.
+        from core.token_resolver import resolve_token
+        access_token = resolve_token(
+            email=task.email,
+            cred_id=task.cred_id,
+            provider="google" if task.provider == "youtube" else task.provider,
+            required_scope_keyword=task.provider,
+        )
+        if not access_token:
+            raise RuntimeError(
+                f"No valid token found for provider='{task.provider}' email='{task.email}'. "
+                "Please authorize via Auth Manager first."
+            )
+
+        # Get provider and upload
+        from core.provider_registry import get as get_provider
+        provider_obj = get_provider(task.provider)
+
+        def progress_cb(bytes_done: int, total: int):
+            if task._cancel_event.is_set():
+                raise InterruptedError("Upload cancelled by user")
+            task.bytes_uploaded = bytes_done
+            task.total_bytes = total
+            task.progress_pct = int(bytes_done / total * 100) if total > 0 else 0
+            self._broadcast(task)
+
+        # page_id is part of VideoProvider.upload_video for every provider — see
+        # the WHY in core/base_provider.py. The queue drives providers through the
+        # registry, so it must not special-case platforms.
+        result = provider_obj.upload_video(
+            file_path=task.file_path,
+            access_token=access_token,
+            title=task.title,
+            description=task.description,
+            tags=task.tags,
+            category_id=task.category_id,
+            privacy=task.privacy,
+            progress_callback=progress_cb,
+            page_id=task.channel_id,
+        )
+
+        result = result or {}
+        if result.get("status") != "success":
+            raise RuntimeError(result.get("message", "Upload failed"))
+
+        task.video_id = result.get("video_id", "")
+        task.video_url = result.get("url", "")
+        task.status = UploadStatus.PROCESSING
+        task.progress_pct = 100
+        self._broadcast(task)
+
+        # The video is already published, so a mismatch is a report, not a failure.
+        landed_on = result.get("channel_id", "")
+        if task.channel_id and landed_on and landed_on != task.channel_id:
+            logger.warning(
+                f"Task {task.task_id} targeted channel '{task.channel_id}' but the "
+                f"video was published to '{landed_on}' — the token owns a different channel."
+            )
+
+        # Upload thumbnail if provided
+        if task.thumbnail_path and os.path.isfile(task.thumbnail_path) and task.video_id:
+            try:
+                provider_obj.set_thumbnail(task.video_id, task.thumbnail_path, access_token)
+                logger.info(f"Thumbnail set for video {task.video_id}")
+            except Exception as e:
+                logger.warning(f"Thumbnail upload failed (non-critical): {e}")
+
+        task.status = UploadStatus.DONE
 
     def shutdown(self):
         self._executor.shutdown(wait=False)

@@ -43,6 +43,20 @@ print("=" * 70)
 print("VIDEO MANAGER — SLICE 1")
 print("=" * 70)
 
+# ── 0. one version format ──────────────────────────────────────────────────
+# compare_versions() (tubecli/core/extension_manager.py) compares each
+# dot-segment as an integer, so mixing HH with HHMMSS inside one day INVERTS
+# the order: 2026.08.28.14 (14:00) reads as older than 2026.08.28.081729
+# (08:17), because 14 < 81729. This manifest has already worn three formats
+# (1.0.0 semver, then .HHMM, then .HH), so the convention is asserted here and
+# written down in README.md, not left to memory.
+import json as _json                                    # noqa: E402
+
+_manifest = _json.loads((EXT / "tubecli-extension.json").read_text(encoding="utf-8-sig"))
+_ver = str(_manifest.get("version", ""))
+check("the manifest version is YYYY.MM.DD.HHMMSS, zero-padded",
+      re.fullmatch(r"\d{4}\.\d{2}\.\d{2}\.\d{6}", _ver) is not None, _ver)
+
 # ── 1. status mapping ───────────────────────────────────────────────────────
 from providers.youtube import video_manager as ytvm   # noqa: E402
 
@@ -98,17 +112,96 @@ check("every channel serialisation goes through _public_channel",
       "a raw to_dict() list survived")
 
 # ── 4. the page uses the dashboard theme ───────────────────────────────────
+# The contract moved on 28/8, when the dashboard stopped merely injecting a
+# palette and started TELLING each iframe its theme (webui/static/app.js:
+# themedSrc appends ?theme=, and syncThemeToIframe now OFFERS its tokens
+# instead of imposing them, precisely so a page that declares light values of
+# its own may keep them). This page answers that contract: a dark base :root,
+# a full light override, and a pre-paint script that pins data-theme before
+# the stylesheet applies.
+#
+# So these checks no longer allowlist hex VALUES — the light theme legitimately
+# needs darker greens/oranges/reds than the dark one. The original defect, and
+# what stays banned, is a colour literal sitting inside a RULE, where no theme
+# block can reach it.
 html = (EXT / "static" / "index.html").read_text(encoding="utf-8")
-DASHBOARD_HEX = {"#f7f8fa", "#ffffff", "#1e293b", "#475569", "#64748b", "#5276eb", "#3d5fd4",
-                 "#22c55e", "#f59e0b", "#ef4444", "#7c5ce7", "#1a1a1a", "#1e1e1e", "#262626",
-                 "#303030", "#333", "#2a2a2a", "#ededed", "#9ca3af", "#6b7280", "#fff"}
-hexes = {h.lower() for h in re.findall(r"#[0-9a-fA-F]{3,6}\b", html)}
-stray = sorted(hexes - DASHBOARD_HEX)
-check("no private colour tokens — every hex is a dashboard value", not stray, stray)
+
+
+def _block(src, opener):
+    """Return (block, src-without-block) for one brace-matched CSS block."""
+    i = src.find(opener)
+    if i < 0:
+        return "", src
+    depth, k = 0, src.find("{", i)
+    while k < len(src):
+        if src[k] == "{":
+            depth += 1
+        elif src[k] == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        k += 1
+    return src[i:k + 1], src[:i] + src[k + 1:]
+
+
+def _tokens(block):
+    return {m.group(1): m.group(2).strip()
+            for m in re.finditer(r"(--[\w-]+)\s*:\s*([^;]+);", block)}
+
+
+style = re.search(r"<style>(.*?)</style>", html, re.S)
+check("the page has a <style> block", style is not None)
+css = style.group(1) if style else ""
+
+dark_block, rest = _block(css, ":root {")
+light_attr, rest = _block(rest, ':root[data-theme="light"] {')
+light_media, rules = _block(rest, "@media (prefers-color-scheme: light) {")
+
+check("a dark base :root exists", dark_block.startswith(":root {"), dark_block[:40])
+check("a light override keyed on data-theme exists", bool(light_attr),
+      'no :root[data-theme="light"] block')
+check("a light media query covers the standalone page", bool(light_media),
+      "no @media (prefers-color-scheme: light)")
+check("the media query yields to an explicitly pinned dark theme",
+      ':root:not([data-theme="dark"])' in light_media, light_media[:120])
+
+# Colour literals left outside the theme blocks. These four are theme-neutral
+# by nature: two brand-primary washes, white on the brand button, and the black
+# duration chip that always sits over a video thumbnail.
+NEUTRAL = {"#fff", "rgba(82,118,235,0.25)", "rgba(82,118,235,0.2)", "rgba(0,0,0,0.75)"}
+literals = re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)", rules)
+stray = sorted({s.lower().replace(" ", "") for s in literals} - NEUTRAL)
+check("no colour literal is baked into a rule — no theme block can reach one",
+      not stray, stray)
+
+# A token defined only on the light side resolves to nothing in the dark.
+dark_tokens, light_tokens = _tokens(dark_block), _tokens(light_attr)
+orphans = sorted(set(light_tokens) - set(dark_tokens))
+check("every token the light theme overrides also has a dark value", not orphans, orphans)
+
+# The file states the two light blocks are verbatim copies that must be edited
+# together; CSS cannot share a declaration list, so this is the only guard.
+check("the two light blocks stay in sync", _tokens(light_media) == light_tokens,
+      sorted(set(_tokens(light_media).items()) ^ set(light_tokens.items())))
+
+# color-scheme drives the UA chrome: scrollbars, <select> popups, date pickers.
+check("the dark base declares color-scheme: dark", "color-scheme: dark" in dark_block,
+      "dark page would keep light scrollbars and select popups")
+check("both light paths declare color-scheme: light",
+      "color-scheme: light" in light_attr and "color-scheme: light" in light_media)
+
 check("the page relies on injected --bg/--bg2/--bg3/--text/--border tokens",
       all(f"var(--{t})" in html for t in ("bg", "bg2", "bg3", "text", "text-muted", "border", "primary")))
-check("standalone fallback + dark media query exist (capcut.html pattern)",
-      ":root {" in html and "prefers-color-scheme: dark" in html and ':root:not([data-theme="light"])' in html)
+
+# Pre-paint. Without it an embedded page flashes dark inside a light dashboard,
+# because syncThemeToIframe can only stamp data-theme after load.
+# The pre-paint comment itself says "Runs BEFORE the page's <style>", so match
+# the real tag at the start of a line, not the first mention of it.
+head = html[:re.search(r"^<style>", html, re.M).start()]
+check("a pre-paint script reads ?theme= before the stylesheet",
+      "data-theme" in head and "location.search" in head, head[-160:])
+check("…and it answers the dashboard's three spellings (glass/light/dark)",
+      all(v in head for v in ("'glass'", "'light'", "'dark'")), "missing a theme value")
 check("no emoji in the UI", not re.search(r"[\U0001F300-\U0001FAFF]", html))
 check("provider tabs are real buttons with tab roles", 'role="tablist"' in html and 'role="tab"' in html)
 check("dialogs are native <dialog> (Esc + focus trap for free)", html.count("<dialog") >= 3, html.count("<dialog"))
